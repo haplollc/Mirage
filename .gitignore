@@ -1,0 +1,17 @@
+.DS_Store
+.build/
+.swiftpm/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+Packages/
+Package.resolved
+xcuserdata/
+*.xcuserstate
+.idea/
+.vscode/
+
+# The pre-built XCFramework is large (~30 MB per platform slice). We
+# attach it to GitHub Releases and link via URL-based binaryTarget for
+# tagged versions, but the repo HEAD doesn't need to carry it.
+Frameworks/sdcpp.xcframework
+*.xcframework.zip

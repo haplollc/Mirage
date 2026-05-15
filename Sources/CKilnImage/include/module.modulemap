@@ -1,0 +1,9 @@
+module CKilnImage {
+    header "KilnImageC.h"
+    export *
+    link "c++"
+    link framework "Metal"
+    link framework "MetalKit"
+    link framework "Foundation"
+    link framework "Accelerate"
+}
