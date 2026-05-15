@@ -64,7 +64,11 @@ Every model below works through the same `Engine` — only the file inputs chang
 | **[ERNIE-Image-Turbo](https://huggingface.co/unsloth/ERNIE-Image-Turbo-GGUF)** | DiT (Turbo-distilled) | `ernie-image-turbo.gguf` | ✅ |
 | **[Z-Image-Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo)** | S3-DiT (6B, Turbo, 8 steps) | `z-image-turbo-Q3_K_M.gguf` | ✅ |
 
-Mirrored, mobile-friendly bundles for each of the above are published on Hugging Face under **[huggingface.co/HaploApps](https://huggingface.co/HaploApps)** — each repo includes the diffusion weights, the right text encoder, the right VAE, and a `README.md` with copy-pastable `Engine(...)` snippets.
+Mirrored, mobile-friendly bundles ship on Hugging Face — each repo includes the diffusion weights, the right text encoder, the right VAE, and a `README.md` with copy-pastable `Engine(...)` snippets:
+
+- 🐶 [`jc-builds/Z-Image-Turbo-iOS`](https://huggingface.co/jc-builds/Z-Image-Turbo-iOS) — 6 B params, 9-step turbo, **6.5 GB**
+- 📜 [`jc-builds/ERNIE-Image-Turbo-iOS`](https://huggingface.co/jc-builds/ERNIE-Image-Turbo-iOS) — 8 B params, best-in-class text rendering, **5.9 GB**
+- 🎨 [`jc-builds/Chroma1-HD-iOS`](https://huggingface.co/jc-builds/Chroma1-HD-iOS) — 8.9 B FLUX-derived, T5-XXL, **14.5 GB** (iPhone 17 Pro / Mac only)
 
 ---
 
