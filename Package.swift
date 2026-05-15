@@ -25,26 +25,20 @@ let package = Package(
     ],
     targets: [
         // Pre-built sd.cpp + ggml + Metal + our C wrapper. Produced by
-        // `Scripts/build-xcframework.sh`.
+        // `Scripts/build-xcframework.sh`. The xcframework already ships
+        // the `CMirage` modulemap + headers internally, so Swift can
+        // `import CMirage` by depending directly on this binary target.
+        // A separate Swift target re-exporting the same headers would
+        // conflict with the xcframework's modulemap when integrated into
+        // Xcode projects.
         .binaryTarget(
             name: "sdcpp",
             path: "Frameworks/sdcpp.xcframework"
         ),
-        // C bridge header that Swift imports. The actual `mirage_*` symbols
-        // live inside the `sdcpp` binary target; this target only contains
-        // the header + module map so Swift can name them.
-        .target(
-            name: "CMirage",
-            dependencies: ["sdcpp"],
-            path: "Sources/CMirage",
-            exclude: ["vendor", "sd"],
-            sources: [],
-            publicHeadersPath: "include"
-        ),
-        // Public Swift API.
+        // Public Swift API. Imports CMirage (provided by the xcframework).
         .target(
             name: "Mirage",
-            dependencies: ["CMirage"],
+            dependencies: ["sdcpp"],
             path: "Sources/Mirage"
         ),
         // Unit tests. The integration test that loads multi-GB weights is
