@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🎨 KilnImage
+# 🎨 Mirage
 
 ### A one-stop on-device diffusion image-generation engine for iOS, macOS, and visionOS.
 
@@ -14,11 +14,11 @@
 <table>
 <tr>
 <td align="center">
-  <img src="https://raw.githubusercontent.com/haplollc/KilnImage/main/Resources/sample-apple.png" width="220" alt="red apple, 256² Z-Image-Turbo, 4 steps, 28s" /><br/>
+  <img src="https://raw.githubusercontent.com/haplollc/Mirage/main/Resources/sample-apple.png" width="220" alt="red apple, 256² Z-Image-Turbo, 4 steps, 28s" /><br/>
   <sub><i>"a single red apple on a white background"</i><br/>256² · 4 steps · <b>28s</b> · M-series Mac · Z-Image-Turbo Q3_K_M</sub>
 </td>
 <td align="center">
-  <img src="https://raw.githubusercontent.com/haplollc/KilnImage/main/Resources/sample-puppy.png" width="220" alt="golden retriever puppy in wildflowers, 1024² Z-Image-Turbo, 9 steps, 7.5min" /><br/>
+  <img src="https://raw.githubusercontent.com/haplollc/Mirage/main/Resources/sample-puppy.png" width="220" alt="golden retriever puppy in wildflowers, 1024² Z-Image-Turbo, 9 steps, 7.5min" /><br/>
   <sub><i>"a photorealistic golden retriever puppy in a sunlit field of wildflowers"</i><br/>1024² · 9 steps · <b>7.5min</b> · M-series Mac · Z-Image-Turbo Q3_K_M</sub>
 </td>
 </tr>
@@ -28,14 +28,14 @@
 
 ---
 
-## Why KilnImage?
+## Why Mirage?
 
 Apple's `ml-stable-diffusion` is great for the **specific** Stable Diffusion checkpoints Apple converted to Core ML — and stops there. Every new diffusion model (Flux, Z-Image, Qwen-Image, ERNIE-Image, Chroma, …) requires its own custom Core ML conversion that takes Apple weeks to publish, if it happens at all.
 
-KilnImage takes a different approach: **embed [`stable-diffusion.cpp`](https://github.com/leejet/stable-diffusion.cpp) + `ggml-metal`** into a clean Swift package. Anything sd.cpp can load, KilnImage can run. No Core ML conversion required.
+Mirage takes a different approach: **embed [`stable-diffusion.cpp`](https://github.com/leejet/stable-diffusion.cpp) + `ggml-metal`** into a clean Swift package. Anything sd.cpp can load, Mirage can run. No Core ML conversion required.
 
 ```swift
-import KilnImage
+import Mirage
 
 let engine = try Engine(models: ModelFiles(
     diffusionModel: zImageTurboGGUF,
@@ -78,14 +78,14 @@ Add to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/haplollc/KilnImage.git", from: "0.1.0"),
+    .package(url: "https://github.com/haplollc/Mirage.git", from: "0.1.0"),
 ],
 targets: [
-    .target(name: "MyApp", dependencies: ["KilnImage"]),
+    .target(name: "MyApp", dependencies: ["Mirage"]),
 ]
 ```
 
-Or in Xcode: **File ▸ Add Package Dependencies…** → `https://github.com/haplollc/KilnImage`
+Or in Xcode: **File ▸ Add Package Dependencies…** → `https://github.com/haplollc/Mirage`
 
 The package ships a prebuilt `sdcpp.xcframework` (Apple Silicon + iOS device + iOS simulator) as a SPM binary target — **no cmake / ninja / clang++ wrangling required on consumer machines**.
 
@@ -95,7 +95,7 @@ The package ships a prebuilt `sdcpp.xcframework` (Apple Silicon + iOS device + i
 
 ```swift
 import SwiftUI
-import KilnImage
+import Mirage
 
 struct ImageGenScreen: View {
     @State private var prompt = "a cute corgi astronaut on Mars, photorealistic"
@@ -144,7 +144,7 @@ struct ImageGenScreen: View {
 }
 ```
 
-A complete reference app lives in [`Examples/KilnImageExampleApp`](Examples/KilnImageExampleApp).
+A complete reference app lives in [`Examples/MirageExampleApp`](Examples/MirageExampleApp).
 
 ---
 
@@ -193,15 +193,15 @@ For "feels fast" generation on iPhone, ship the Turbo variants — they're disti
 
 ```
                                         ┌─────────────────────┐
-your prompt + model paths               │   KilnImage (Swift) │
+your prompt + model paths               │   Mirage (Swift) │
        │                                │  ┌───────────────┐  │
        ▼                                │  │ public  API   │  │
    ┌───────┐    actor isolation         │  └──────┬────────┘  │
    │Engine │  ◄──────────────────────────┼────────┘           │
    │ actor │                             │                    │
-   └───┬───┘                             │   CKilnImage (C)   │
-       │ kiln_generate(...)              │  ┌───────────────┐ │
-       ▼                                 │  │ KilnImageC.cpp│ │
+   └───┬───┘                             │   CMirage (C)   │
+       │ mirage_generate(...)              │  ┌───────────────┐ │
+       ▼                                 │  │ MirageC.cpp│ │
    ┌──────────────────────────────────┐  │  └──────┬────────┘ │
    │  stable-diffusion.cpp / ggml     │  │         │          │
    │  + Metal backend (compute kernels)│ │         ▼          │
@@ -212,7 +212,7 @@ your prompt + model paths               │   KilnImage (Swift) │
 ```
 
 - **Public Swift API** is one `actor Engine` + `Engine.generate(_:)` returning `CGImage`. Actor isolation serializes calls because the underlying C++ context isn't thread-safe against itself.
-- **C bridge** is a 12-symbol header (`KilnImageC.h`) that's deliberately tiny so upstream sd.cpp churn doesn't reach Swift.
+- **C bridge** is a 12-symbol header (`MirageC.h`) that's deliberately tiny so upstream sd.cpp churn doesn't reach Swift.
 - **Native engine** is `stable-diffusion.cpp` (MIT) running on `ggml-metal`. We compile it into an XCFramework so SPM consumers don't need cmake/ninja installed.
 
 ---
@@ -236,14 +236,14 @@ Then `swift build` / `swift test` work normally.
 
 ```bash
 # Fast smoke (always run, < 10s)
-swift test --filter KilnImageSmokeTests
+swift test --filter MirageSmokeTests
 
 # Heavy integration (requires a folder with model files)
-KILN_TEST_MODELS_DIR=$HOME/Downloads/kiln-models \
-    swift test --filter KilnImageHeavyIntegrationTests
+MIRAGE_TEST_MODELS_DIR=$HOME/Downloads/kiln-models \
+    swift test --filter MirageHeavyIntegrationTests
 ```
 
-The heavy tests load real multi-GB weights and generate small images. They're gated on `KILN_TEST_MODELS_DIR` so CI doesn't try to ship 6+ GB through every PR.
+The heavy tests load real multi-GB weights and generate small images. They're gated on `MIRAGE_TEST_MODELS_DIR` so CI doesn't try to ship 6+ GB through every PR.
 
 ---
 
@@ -261,7 +261,7 @@ The heavy tests load real multi-GB weights and generate small images. They're ga
 
 [Haplo](https://haplo.app) — on-device AI for iOS. The same engine powers Haplo's in-app image generation.
 
-If KilnImage shows up in your app, [tell us about it](https://twitter.com/jc_builds).
+If Mirage shows up in your app, [tell us about it](https://twitter.com/jc_builds).
 
 ---
 

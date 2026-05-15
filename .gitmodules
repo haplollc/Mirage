@@ -1,3 +1,3 @@
 [submodule "Sources/CKilnImage/vendor/sd-cpp"]
-	path = Sources/CKilnImage/vendor/sd-cpp
+	path = Sources/CMirage/vendor/sd-cpp
 	url = https://github.com/leejet/stable-diffusion.cpp.git

@@ -1,17 +1,17 @@
 //
-//  KilnImageC.cpp
+//  MirageC.cpp
 //  Thin wrapper around stable-diffusion.cpp's C++ API, exposed via the
-//  C ABI declared in KilnImageC.h.
+//  C ABI declared in MirageC.h.
 //
 //  Memory ownership rules:
-//    - `kiln_ctx` is heap-allocated; freed by `kiln_ctx_free`.
-//    - `kiln_image` and its `pixels` buffer are heap-allocated; freed by
-//      `kiln_free_image`.
-//    - Strings inside `kiln_model_paths` / `kiln_gen_params` are borrowed
+//    - `mirage_ctx` is heap-allocated; freed by `mirage_ctx_free`.
+//    - `mirage_image` and its `pixels` buffer are heap-allocated; freed by
+//      `mirage_free_image`.
+//    - Strings inside `mirage_model_paths` / `mirage_gen_params` are borrowed
 //      from the caller and must outlive the call (they're not retained).
 //
 
-#include "KilnImageC.h"
+#include "MirageC.h"
 
 // stable-diffusion.cpp pulls in <stable-diffusion.h> which declares the
 // `sd_ctx_t` opaque type and the `new_sd_ctx`, `txt2img`, etc. entry points.
@@ -37,13 +37,13 @@ void set_last_error(const char* msg) {
 
 // MARK: - Engine context
 
-struct kiln_ctx {
+struct mirage_ctx {
     sd_ctx_t* sd = nullptr;
 };
 
-extern "C" kiln_ctx* kiln_ctx_create(const kiln_model_paths* paths) {
+extern "C" mirage_ctx* mirage_ctx_create(const mirage_model_paths* paths) {
     if (!paths || !paths->diffusion_model_path) {
-        set_last_error("kiln_ctx_create: diffusion_model_path is required");
+        set_last_error("mirage_ctx_create: diffusion_model_path is required");
         return nullptr;
     }
 
@@ -66,12 +66,12 @@ extern "C" kiln_ctx* kiln_ctx_create(const kiln_model_paths* paths) {
         return nullptr;
     }
 
-    auto* ctx = new kiln_ctx();
+    auto* ctx = new mirage_ctx();
     ctx->sd = sd;
     return ctx;
 }
 
-extern "C" void kiln_ctx_free(kiln_ctx* ctx) {
+extern "C" void mirage_ctx_free(mirage_ctx* ctx) {
     if (!ctx) return;
     if (ctx->sd) free_sd_ctx(ctx->sd);
     delete ctx;
@@ -79,13 +79,13 @@ extern "C" void kiln_ctx_free(kiln_ctx* ctx) {
 
 // MARK: - Generation
 
-extern "C" kiln_image* kiln_generate(kiln_ctx* ctx, const kiln_gen_params* params) {
+extern "C" mirage_image* mirage_generate(mirage_ctx* ctx, const mirage_gen_params* params) {
     if (!ctx || !ctx->sd) {
-        set_last_error("kiln_generate: invalid context");
+        set_last_error("mirage_generate: invalid context");
         return nullptr;
     }
     if (!params || !params->prompt) {
-        set_last_error("kiln_generate: prompt is required");
+        set_last_error("mirage_generate: prompt is required");
         return nullptr;
     }
 
@@ -107,9 +107,9 @@ extern "C" kiln_image* kiln_generate(kiln_ctx* ctx, const kiln_gen_params* param
         return nullptr;
     }
 
-    auto* img = static_cast<kiln_image*>(std::malloc(sizeof(kiln_image)));
+    auto* img = static_cast<mirage_image*>(std::malloc(sizeof(mirage_image)));
     if (!img) {
-        set_last_error("kiln_generate: out of memory allocating image struct");
+        set_last_error("mirage_generate: out of memory allocating image struct");
         for (int i = 0; i < g.batch_count; ++i) {
             if (result[i].data) std::free(result[i].data);
         }
@@ -125,7 +125,7 @@ extern "C" kiln_image* kiln_generate(kiln_ctx* ctx, const kiln_gen_params* param
                          static_cast<size_t>(img->channels);
     img->pixels = static_cast<uint8_t*>(std::malloc(bytes));
     if (!img->pixels) {
-        set_last_error("kiln_generate: out of memory allocating pixel buffer");
+        set_last_error("mirage_generate: out of memory allocating pixel buffer");
         for (int i = 0; i < g.batch_count; ++i) {
             if (result[i].data) std::free(result[i].data);
         }
@@ -143,7 +143,7 @@ extern "C" kiln_image* kiln_generate(kiln_ctx* ctx, const kiln_gen_params* param
     return img;
 }
 
-extern "C" void kiln_free_image(kiln_image* img) {
+extern "C" void mirage_free_image(mirage_image* img) {
     if (!img) return;
     if (img->pixels) std::free(img->pixels);
     std::free(img);
@@ -151,10 +151,10 @@ extern "C" void kiln_free_image(kiln_image* img) {
 
 // MARK: - Diagnostics
 
-extern "C" const char* kiln_last_error(void) {
+extern "C" const char* mirage_last_error(void) {
     return g_last_error.c_str();
 }
 
-extern "C" const char* kiln_version(void) {
+extern "C" const char* mirage_version(void) {
     return "0.1.0";
 }

@@ -1,6 +1,6 @@
 //
-//  KilnImage.swift
-//  Swift facade over the C ABI exposed by `CKilnImage`.
+//  Mirage.swift
+//  Swift facade over the C ABI exposed by `CMirage`.
 //
 //  Public surface intentionally kept small. The `Engine` actor owns the
 //  C++ context for its lifetime, so loading the (multi-GB) weights happens
@@ -13,17 +13,17 @@
 import Foundation
 import CoreGraphics
 import ImageIO
-import CKilnImage
+import CMirage
 
 // MARK: - Top-level namespace
 
 /// Kiln-Image: a multi-model, on-device diffusion image generator for
 /// iOS / macOS / visionOS. Backed by `stable-diffusion.cpp` + ggml-metal.
-public enum KilnImage {
+public enum Mirage {
 
     /// The engine version reported by the embedded native library.
     public static var nativeVersion: String {
-        String(cString: kiln_version())
+        String(cString: mirage_version())
     }
 }
 
@@ -92,11 +92,11 @@ public struct GenerationRequest: Sendable {
 
 // MARK: - Errors
 
-public enum KilnImageError: Error, CustomStringConvertible, Sendable {
-    /// `kiln_ctx_create` returned NULL. The associated string is the
+public enum MirageError: Error, CustomStringConvertible, Sendable {
+    /// `mirage_ctx_create` returned NULL. The associated string is the
     /// last-error text from the native side.
     case modelLoadFailed(String)
-    /// `kiln_generate` returned NULL.
+    /// `mirage_generate` returned NULL.
     case generationFailed(String)
     /// The native-side image was unrecognisable (wrong channel count, zero
     /// dims, etc.).
@@ -124,7 +124,7 @@ public actor Engine {
 
     /// Raw pointer to the C++ engine context. Lifetime is the actor's; freed
     /// in `deinit`. Held as `OpaquePointer` because Swift imports the
-    /// `kiln_ctx*` typedef that way.
+    /// `mirage_ctx*` typedef that way.
     private let ctx: OpaquePointer
 
     /// Load a model into a new engine context. Throws if the native side
@@ -144,26 +144,26 @@ public actor Engine {
         let result: OpaquePointer? = diffusion.withCString { dPtr in
             withOptionalCString(vae) { vPtr in
                 withOptionalCString(llm) { lPtr in
-                    var paths = kiln_model_paths(
+                    var paths = mirage_model_paths(
                         diffusion_model_path: dPtr,
                         vae_path: vPtr,
                         llm_path: lPtr
                     )
                     return withUnsafePointer(to: &paths) { pp -> OpaquePointer? in
-                        kiln_ctx_create(pp)
+                        mirage_ctx_create(pp)
                     }
                 }
             }
         }
 
         guard let ctx = result else {
-            throw KilnImageError.modelLoadFailed(Self.lastNativeError())
+            throw MirageError.modelLoadFailed(Self.lastNativeError())
         }
         self.ctx = ctx
     }
 
     deinit {
-        kiln_ctx_free(ctx)
+        mirage_ctx_free(ctx)
     }
 
     /// Generate one image. The returned `CGImage` is detached from the
@@ -173,9 +173,9 @@ public actor Engine {
         let promptHolder = request.prompt
         let negHolder = request.negativePrompt ?? ""
 
-        let imgPtr: UnsafeMutablePointer<kiln_image>? = promptHolder.withCString { pPtr in
+        let imgPtr: UnsafeMutablePointer<mirage_image>? = promptHolder.withCString { pPtr in
             negHolder.withCString { nPtr in
-                var params = kiln_gen_params(
+                var params = mirage_gen_params(
                     prompt: pPtr,
                     negative_prompt: request.negativePrompt == nil ? nil : nPtr,
                     width: Int32(request.width),
@@ -186,25 +186,25 @@ public actor Engine {
                     batch_size: 1
                 )
                 return withUnsafePointer(to: &params) { pp in
-                    kiln_generate(self.ctx, pp)
+                    mirage_generate(self.ctx, pp)
                 }
             }
         }
 
         guard let imgPtr = imgPtr else {
-            throw KilnImageError.generationFailed(Self.lastNativeError())
+            throw MirageError.generationFailed(Self.lastNativeError())
         }
-        defer { kiln_free_image(imgPtr) }
+        defer { mirage_free_image(imgPtr) }
 
         let img = imgPtr.pointee
         guard img.width > 0, img.height > 0, img.channels == 4 || img.channels == 3 else {
-            throw KilnImageError.invalidNativeImage(
+            throw MirageError.invalidNativeImage(
                 "got width=\(img.width) height=\(img.height) channels=\(img.channels)"
             )
         }
 
         guard let cg = Self.makeCGImage(from: img) else {
-            throw KilnImageError.cgImageCreationFailed
+            throw MirageError.cgImageCreationFailed
         }
         return cg
     }
@@ -212,12 +212,12 @@ public actor Engine {
     // MARK: Private
 
     private static func lastNativeError() -> String {
-        guard let cstr = kiln_last_error() else { return "(no error message)" }
+        guard let cstr = mirage_last_error() else { return "(no error message)" }
         let s = String(cString: cstr)
         return s.isEmpty ? "(no error message)" : s
     }
 
-    private static func makeCGImage(from img: kiln_image) -> CGImage? {
+    private static func makeCGImage(from img: mirage_image) -> CGImage? {
         let w = Int(img.width)
         let h = Int(img.height)
         let c = Int(img.channels)

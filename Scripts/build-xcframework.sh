@@ -15,8 +15,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SD_DIR="$ROOT/Sources/CKilnImage/vendor/sd-cpp"
-WRAP_DIR="$ROOT/Sources/CKilnImage"
+SD_DIR="$ROOT/Sources/CMirage/vendor/sd-cpp"
+WRAP_DIR="$ROOT/Sources/CMirage"
 OUT_DIR="$ROOT/Frameworks"
 BUILD_ROOT="$ROOT/.build/xcframework"
 
@@ -71,7 +71,7 @@ build_slice() {
     ninja -C "$BUILD_DIR" stable-diffusion
 
     echo "==> Compiling our C wrapper for $NAME"
-    local WRAP_OBJ="$BUILD_DIR/KilnImageC.o"
+    local WRAP_OBJ="$BUILD_DIR/MirageC.o"
     local SDK_FLAG=""
     local TARGET_FLAG=""
     case "$NAME" in
@@ -93,14 +93,14 @@ build_slice() {
         -I"$WRAP_DIR/include" \
         -I"$SD_DIR/include" \
         -I"$SD_DIR/ggml/include" \
-        "$WRAP_DIR/sd/KilnImageC.cpp" \
+        "$WRAP_DIR/sd/MirageC.cpp" \
         -o "$WRAP_OBJ"
 
     # Combine all the static libs into one fat archive so the binary target
     # has a single .a to link. libwebp / libwebm are CLI-only deps that
     # only get built when sd.cpp's `examples` target is requested — we
     # build only the library, so skip them.
-    local OUT_LIB="$BUILD_DIR/libkiln-sdcpp.a"
+    local OUT_LIB="$BUILD_DIR/libmirage-sdcpp.a"
     rm -f "$OUT_LIB"
     libtool -static -o "$OUT_LIB" \
         "$BUILD_DIR/libstable-diffusion.a" \
@@ -132,7 +132,7 @@ rm -rf "$OUT_DIR/sdcpp.xcframework"
 
 XC_ARGS=""
 for slice in macos-arm64 ios-arm64 ios-sim; do
-    LIB="$BUILD_ROOT/$slice/libkiln-sdcpp.a"
+    LIB="$BUILD_ROOT/$slice/libmirage-sdcpp.a"
     if [ -f "$LIB" ]; then
         XC_ARGS="$XC_ARGS -library $LIB -headers $WRAP_DIR/include"
     fi

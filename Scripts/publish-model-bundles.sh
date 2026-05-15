@@ -2,16 +2,16 @@
 #
 # publish-model-bundles.sh
 #
-# Mirror upstream model files into HaploApps/* HF repos so KilnImage
+# Mirror upstream model files into HaploApps/* HF repos so Mirage
 # consumers can fetch a single, documented bundle per model family.
 #
 # Each bundle is a separate HF repo with:
 #   - the diffusion weights (Q3_K_M GGUF for iPhone-friendly size)
 #   - the matching text encoder (also GGUF when possible)
 #   - the matching VAE (.safetensors)
-#   - a custom model card cross-linking to upstream + to KilnImage
+#   - a custom model card cross-linking to upstream + to Mirage
 #
-# Run interactively from a checkout of KilnImage. Requires `hf` CLI logged
+# Run interactively from a checkout of Mirage. Requires `hf` CLI logged
 # in to an account that can push to `HaploApps/*`.
 #
 # Usage:
@@ -51,7 +51,7 @@ publish_z_image_turbo() {
     hf repos create "$ORG/$SLUG" --type model --exist-ok
 
     echo "==> Uploading"
-    hf upload "$ORG/$SLUG" "$STAGE" . --commit-message "KilnImage: Z-Image-Turbo iOS bundle"
+    hf upload "$ORG/$SLUG" "$STAGE" . --commit-message "Mirage: Z-Image-Turbo iOS bundle"
 }
 
 publish_qwen_image() {
@@ -103,7 +103,7 @@ base_model: Tongyi-MAI/Z-Image-Turbo
 
 A pre-flighted bundle of Z-Image-Turbo + Qwen3-4B text encoder + FLUX VAE,
 sized and quantized to fit on iPhone 16 Pro / 17 Pro and run via
-[KilnImage](https://github.com/haplollc/KilnImage).
+[Mirage](https://github.com/haplollc/Mirage).
 
 ## What's inside
 
@@ -116,10 +116,10 @@ sized and quantized to fit on iPhone 16 Pro / 17 Pro and run via
 
 **Pick one of the two diffusion files** — Q3 for iPhone 15/16 Pro, Q4 for iPhone 17 Pro / Mac.
 
-## Usage (KilnImage)
+## Usage (Mirage)
 
 ```swift
-import KilnImage
+import Mirage
 
 let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
 let engine = try Engine(models: ModelFiles(
@@ -146,7 +146,7 @@ dual-stream MMDiT designs.
 It's distilled to **8-9 sampling steps** via Decoupled-DMD + DMDR, which is
 why generation is fast even with 6B params loaded.
 
-## Performance (KilnImage)
+## Performance (Mirage)
 
 | Device | 1024² @ 9 steps |
 |---|---|
@@ -172,7 +172,7 @@ Flux's non-commercial license.
 
 ## Built by
 
-[Haplo](https://haplo.app) · [KilnImage on GitHub](https://github.com/haplollc/KilnImage)
+[Haplo](https://haplo.app) · [Mirage on GitHub](https://github.com/haplollc/Mirage)
 EOF
 }
 

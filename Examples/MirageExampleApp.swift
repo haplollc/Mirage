@@ -1,7 +1,7 @@
 //
-//  KilnImageExampleApp.swift
+//  MirageExampleApp.swift
 //
-//  Single-file SwiftUI example showing how to wire KilnImage into a real
+//  Single-file SwiftUI example showing how to wire Mirage into a real
 //  app. Tested on iOS 17+ and macOS 14+.
 //
 //  Setup:
@@ -16,15 +16,15 @@
 //       Download bundles from huggingface.co/HaploApps once and copy into
 //       the documents dir on first launch.
 //
-//    2. Drop this file into a fresh Xcode SwiftUI app with `KilnImage`
+//    2. Drop this file into a fresh Xcode SwiftUI app with `Mirage`
 //       added as a Swift package dependency.
 //
 
 import SwiftUI
-import KilnImage
+import Mirage
 
 @main
-struct KilnImageExampleApp: App {
+struct MirageExampleApp: App {
     var body: some Scene {
         WindowGroup {
             GenerateView()

@@ -1,5 +1,5 @@
-module CKilnImage {
-    header "KilnImageC.h"
+module CMirage {
+    header "MirageC.h"
     export *
     link "c++"
     link framework "Metal"

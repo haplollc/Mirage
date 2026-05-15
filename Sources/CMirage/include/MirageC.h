@@ -1,5 +1,5 @@
 //
-//  KilnImageC.h
+//  MirageC.h
 //  C bridge between Swift and stable-diffusion.cpp.
 //
 //  This is the only header the Swift side imports. Hides every sd.cpp /
@@ -7,8 +7,8 @@
 //  module map stays small and stable across upstream churn.
 //
 
-#ifndef KILN_IMAGE_C_H
-#define KILN_IMAGE_C_H
+#ifndef MIRAGE_C_H
+#define MIRAGE_C_H
 
 #include <stdint.h>
 #include <stddef.h>
@@ -20,7 +20,7 @@ extern "C" {
 
 // MARK: - Engine handle
 
-typedef struct kiln_ctx kiln_ctx;
+typedef struct mirage_ctx mirage_ctx;
 
 // MARK: - Model paths
 
@@ -31,7 +31,7 @@ typedef struct {
     const char* diffusion_model_path;   ///< The .gguf or .safetensors diffusion transformer weights.
     const char* vae_path;               ///< VAE encoder/decoder weights (often Flux's ae.safetensors).
     const char* llm_path;               ///< Text encoder GGUF (Qwen3-4B for Z-Image, T5 for SD3/Flux, …).
-} kiln_model_paths;
+} mirage_model_paths;
 
 // MARK: - Generation parameters
 
@@ -44,7 +44,7 @@ typedef struct {
     float   cfg_scale;                  ///< Classifier-free guidance scale. Turbo models use 1.0.
     int64_t seed;                       ///< RNG seed. -1 picks a random one.
     int32_t batch_size;                 ///< Number of images per call. Default 1.
-} kiln_gen_params;
+} mirage_gen_params;
 
 /// One generated image as a tightly-packed RGBA8 buffer the Swift side can
 /// hand to CGImage / UIImage without further allocation.
@@ -52,40 +52,40 @@ typedef struct {
     int32_t  width;
     int32_t  height;
     int32_t  channels;                  ///< Always 4 (RGBA).
-    uint8_t* pixels;                    ///< Owned by Kiln; freed by `kiln_free_image`.
-} kiln_image;
+    uint8_t* pixels;                    ///< Owned by Kiln; freed by `mirage_free_image`.
+} mirage_image;
 
 // MARK: - Lifecycle
 
 /// Load the given model files into a new engine context. Returns NULL on
-/// failure (and writes a human-readable reason to `kiln_last_error`).
-kiln_ctx* kiln_ctx_create(const kiln_model_paths* paths);
+/// failure (and writes a human-readable reason to `mirage_last_error`).
+mirage_ctx* mirage_ctx_create(const mirage_model_paths* paths);
 
 /// Tear down an engine context and release its weights.
-void kiln_ctx_free(kiln_ctx* ctx);
+void mirage_ctx_free(mirage_ctx* ctx);
 
 // MARK: - Generation
 
 /// Run the diffusion sampler against `params` and return a heap-allocated
-/// `kiln_image*`. NULL on failure. Caller frees with `kiln_free_image`.
-kiln_image* kiln_generate(kiln_ctx* ctx, const kiln_gen_params* params);
+/// `mirage_image*`. NULL on failure. Caller frees with `mirage_free_image`.
+mirage_image* mirage_generate(mirage_ctx* ctx, const mirage_gen_params* params);
 
-/// Release an image returned by `kiln_generate`.
-void kiln_free_image(kiln_image* img);
+/// Release an image returned by `mirage_generate`.
+void mirage_free_image(mirage_image* img);
 
 // MARK: - Diagnostics
 
 /// Human-readable description of the last failure on this thread. Empty
 /// string if no error has been recorded. Lifetime: until the next Kiln call
 /// on this thread.
-const char* kiln_last_error(void);
+const char* mirage_last_error(void);
 
 /// Engine version, in the format "MAJOR.MINOR.PATCH" — bumped on breaking
 /// changes to the C ABI above.
-const char* kiln_version(void);
+const char* mirage_version(void);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // KILN_IMAGE_C_H
+#endif // MIRAGE_C_H

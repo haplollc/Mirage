@@ -1,7 +1,7 @@
 // swift-tools-version:5.9
 import PackageDescription
 
-// MARK: - KilnImage SPM package
+// MARK: - Mirage SPM package
 //
 // The native engine (sd.cpp + ggml + Metal backend + our C wrapper) ships
 // as a prebuilt XCFramework (`Frameworks/sdcpp.xcframework`) so SPM
@@ -13,7 +13,7 @@ import PackageDescription
 // release for SPM consumers that fetch this package by URL.
 
 let package = Package(
-    name: "KilnImage",
+    name: "Mirage",
     platforms: [
         .iOS(.v17),
         .macOS(.v14),
@@ -21,7 +21,7 @@ let package = Package(
         .macCatalyst(.v17),
     ],
     products: [
-        .library(name: "KilnImage", targets: ["KilnImage"]),
+        .library(name: "Mirage", targets: ["Mirage"]),
     ],
     targets: [
         // Pre-built sd.cpp + ggml + Metal + our C wrapper. Produced by
@@ -30,29 +30,29 @@ let package = Package(
             name: "sdcpp",
             path: "Frameworks/sdcpp.xcframework"
         ),
-        // C bridge header that Swift imports. The actual `kiln_*` symbols
+        // C bridge header that Swift imports. The actual `mirage_*` symbols
         // live inside the `sdcpp` binary target; this target only contains
         // the header + module map so Swift can name them.
         .target(
-            name: "CKilnImage",
+            name: "CMirage",
             dependencies: ["sdcpp"],
-            path: "Sources/CKilnImage",
+            path: "Sources/CMirage",
             exclude: ["vendor", "sd"],
             sources: [],
             publicHeadersPath: "include"
         ),
         // Public Swift API.
         .target(
-            name: "KilnImage",
-            dependencies: ["CKilnImage"],
-            path: "Sources/KilnImage"
+            name: "Mirage",
+            dependencies: ["CMirage"],
+            path: "Sources/Mirage"
         ),
         // Unit tests. The integration test that loads multi-GB weights is
-        // gated on env var KILN_TEST_MODELS_DIR — keep CI fast by default.
+        // gated on env var MIRAGE_TEST_MODELS_DIR — keep CI fast by default.
         .testTarget(
-            name: "KilnImageTests",
-            dependencies: ["KilnImage"],
-            path: "Tests/KilnImageTests"
+            name: "MirageTests",
+            dependencies: ["Mirage"],
+            path: "Tests/MirageTests"
         ),
     ],
     cxxLanguageStandard: .cxx17

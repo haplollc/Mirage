@@ -1,14 +1,14 @@
 //
-//  KilnImageTests.swift
+//  MirageTests.swift
 //  Two test tiers:
 //    - Fast (always run): verify the package compiles, native lib loads,
 //      version string is well-formed, error reporting works for bad inputs.
-//    - Heavy (gated on `KILN_TEST_MODELS_DIR` env var): actually load
+//    - Heavy (gated on `MIRAGE_TEST_MODELS_DIR` env var): actually load
 //      multi-GB weights + generate an image. Skip by default so CI
 //      doesn't need to ship 6+ GB through every PR.
 //
 //  Heavy-test usage:
-//      KILN_TEST_MODELS_DIR=/path/to/dir \
+//      MIRAGE_TEST_MODELS_DIR=/path/to/dir \
 //          swift test --filter HeavyIntegrationTests
 //  The directory must contain:
 //      diffusion.gguf          (any sd.cpp-compatible diffusion model)
@@ -18,14 +18,14 @@
 
 import XCTest
 import CoreGraphics
-@testable import KilnImage
+@testable import Mirage
 
 // MARK: - Fast smoke tests
 
-final class KilnImageSmokeTests: XCTestCase {
+final class MirageSmokeTests: XCTestCase {
 
     func testNativeVersionStringIsWellFormed() {
-        let v = KilnImage.nativeVersion
+        let v = Mirage.nativeVersion
         XCTAssertFalse(v.isEmpty, "native version string is empty")
         // Expect MAJOR.MINOR.PATCH.
         XCTAssertEqual(v.split(separator: ".").count, 3, "version not in semver shape: \(v)")
@@ -36,7 +36,7 @@ final class KilnImageSmokeTests: XCTestCase {
         do {
             _ = try Engine(models: ModelFiles(diffusionModel: bogus))
             XCTFail("expected modelLoadFailed for non-existent path")
-        } catch let KilnImageError.modelLoadFailed(reason) {
+        } catch let MirageError.modelLoadFailed(reason) {
             XCTAssertFalse(reason.isEmpty, "error message should explain failure")
         } catch {
             XCTFail("got unexpected error type: \(error)")
@@ -46,13 +46,13 @@ final class KilnImageSmokeTests: XCTestCase {
 
 // MARK: - Heavy integration tests (env-gated)
 
-final class KilnImageHeavyIntegrationTests: XCTestCase {
+final class MirageHeavyIntegrationTests: XCTestCase {
 
-    /// Resolved at runtime via `KILN_TEST_MODELS_DIR`. If unset, every
+    /// Resolved at runtime via `MIRAGE_TEST_MODELS_DIR`. If unset, every
     /// test in this class throws `XCTSkip`.
     private func resolveModelsDir() throws -> URL {
-        guard let path = ProcessInfo.processInfo.environment["KILN_TEST_MODELS_DIR"] else {
-            throw XCTSkip("Set KILN_TEST_MODELS_DIR to a folder containing model files.")
+        guard let path = ProcessInfo.processInfo.environment["MIRAGE_TEST_MODELS_DIR"] else {
+            throw XCTSkip("Set MIRAGE_TEST_MODELS_DIR to a folder containing model files.")
         }
         return URL(fileURLWithPath: path)
     }
@@ -110,7 +110,7 @@ final class KilnImageHeavyIntegrationTests: XCTestCase {
             let out = FileManager.default.temporaryDirectory
                 .appendingPathComponent("kiln-tiny.png")
             try? data.write(to: out)
-            print("[KilnImageTests] saved smoke output → \(out.path)")
+            print("[MirageTests] saved smoke output → \(out.path)")
         }
     }
 
