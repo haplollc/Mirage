@@ -4,13 +4,9 @@ import PackageDescription
 // MARK: - Mirage SPM package
 //
 // The native engine (sd.cpp + ggml + Metal backend + our C wrapper) ships
-// as a prebuilt XCFramework (`Frameworks/sdcpp.xcframework`) so SPM
-// consumers don't need cmake / ninja / iOS SDK tooling installed.
-//
-// The XCFramework is produced by `Scripts/build-xcframework.sh`. Run it
-// after a fresh checkout, then `swift build` / `swift test` work normally.
-// The XCFramework is also shipped as an asset on each tagged GitHub
-// release for SPM consumers that fetch this package by URL.
+// as a prebuilt XCFramework downloaded from this tag's GitHub release.
+// SPM consumers fetching `.package(url:, from: "0.2.0")` get the binary
+// transparently — no cmake / ninja / iOS SDK tooling required locally.
 
 let package = Package(
     name: "Mirage",
@@ -24,16 +20,16 @@ let package = Package(
         .library(name: "Mirage", targets: ["Mirage"]),
     ],
     targets: [
-        // Pre-built sd.cpp + ggml + Metal + our C wrapper. Produced by
-        // `Scripts/build-xcframework.sh`. The xcframework already ships
-        // the `CMirage` modulemap + headers internally, so Swift can
-        // `import CMirage` by depending directly on this binary target.
-        // A separate Swift target re-exporting the same headers would
-        // conflict with the xcframework's modulemap when integrated into
-        // Xcode projects.
+        // Pre-built sd.cpp + ggml + Metal + our C wrapper. The xcframework
+        // already ships the `CMirage` modulemap + headers internally, so
+        // Swift can `import CMirage` by depending directly on this binary
+        // target. A separate Swift target re-exporting the same headers
+        // would conflict with the xcframework's modulemap when integrated
+        // into Xcode projects.
         .binaryTarget(
             name: "sdcpp",
-            path: "Frameworks/sdcpp.xcframework"
+            url: "https://github.com/haplollc/Mirage/releases/download/0.2.0/sdcpp.xcframework.zip",
+            checksum: "2754f948ff12e1c546f46e0dfa59f29627d468b1c30ba1783bdaa5d8948e5472"
         ),
         // Public Swift API. Imports CMirage (provided by the xcframework).
         .target(
