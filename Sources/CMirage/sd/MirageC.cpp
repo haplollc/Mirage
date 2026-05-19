@@ -16,6 +16,7 @@
 // stable-diffusion.cpp pulls in <stable-diffusion.h> which declares the
 // `sd_ctx_t` opaque type and the `new_sd_ctx`, `txt2img`, etc. entry points.
 #include "stable-diffusion.h"
+#include "ggml.h"
 
 #include <cstring>
 #include <cstdlib>
@@ -41,10 +42,55 @@ struct mirage_ctx {
     sd_ctx_t* sd = nullptr;
 };
 
+namespace {
+
+// Funnel every sd.cpp / ggml log line into the iOS device console with a
+// recognisable prefix. Without this, GGML's error logs (compile failures,
+// shape mismatches, etc.) go to plain stderr and get lost in the noise
+// from sd.cpp's progress bars on iPhone.
+void mirage_sd_log_cb(enum sd_log_level_t level, const char* text, void* /*data*/) {
+    if (!text) return;
+    const char* tag = "info";
+    switch (level) {
+        case SD_LOG_ERROR: tag = "ERR "; break;
+        case SD_LOG_WARN:  tag = "WARN"; break;
+        case SD_LOG_INFO:  tag = "info"; break;
+        case SD_LOG_DEBUG: tag = "dbg "; break;
+    }
+    fprintf(stderr, "[mirage sd %s] %s%s", tag, text,
+            (text[0] && text[strlen(text)-1] == '\n') ? "" : "\n");
+    fflush(stderr);
+}
+
+void mirage_ggml_log_cb(enum ggml_log_level level, const char* text, void* /*data*/) {
+    if (!text) return;
+    const char* tag = "info";
+    switch (level) {
+        case GGML_LOG_LEVEL_ERROR: tag = "ERR "; break;
+        case GGML_LOG_LEVEL_WARN:  tag = "WARN"; break;
+        case GGML_LOG_LEVEL_INFO:  tag = "info"; break;
+        case GGML_LOG_LEVEL_DEBUG: tag = "dbg "; break;
+        default: break;
+    }
+    fprintf(stderr, "[mirage ggml %s] %s%s", tag, text,
+            (text[0] && text[strlen(text)-1] == '\n') ? "" : "\n");
+    fflush(stderr);
+}
+
+bool g_log_cb_installed = false;
+
+} // namespace
+
 extern "C" mirage_ctx* mirage_ctx_create(const mirage_model_paths* paths) {
     if (!paths || !paths->diffusion_model_path) {
         set_last_error("mirage_ctx_create: diffusion_model_path is required");
         return nullptr;
+    }
+
+    if (!g_log_cb_installed) {
+        sd_set_log_callback(mirage_sd_log_cb, nullptr);
+        ggml_log_set(mirage_ggml_log_cb, nullptr);
+        g_log_cb_installed = true;
     }
 
     // Build a default sd_ctx_params and override only what we expose.
@@ -54,11 +100,65 @@ extern "C" mirage_ctx* mirage_ctx_create(const mirage_model_paths* paths) {
     if (paths->vae_path) { p.vae_path = paths->vae_path; }
     if (paths->llm_path) { p.llm_path = paths->llm_path; }
 
-    // Memory-saver knobs that matter on iPhone.
-    p.keep_clip_on_cpu = true;
+    // Memory + speed tuning. Read the inline notes — each flag is the result
+    // of a real iOS-only failure mode (jetsam, missing kernels, dangling
+    // freed params on second generation, etc.).
+    //
+    // `enable_mmap = true`: cuts peak load memory from ~2× weights (read +
+    // upload) to ~1× (lazily paged-in working set). Required on iPhone or
+    // jetsam kills the app during weight load.
+    //
+    // `offload_params_to_cpu = false`: keeps diffusion params resident in
+    // Metal buffers for the lifetime of the engine. With mmap on, the path
+    // goes through `buffer_from_host_ptr` (zero-copy on Apple Silicon's
+    // unified memory) so no extra footprint vs offload=true, but per-op
+    // sampling avoids the CPU↔GPU copy and runs 3-5× faster.
+    //
+    // `keep_vae_on_cpu = false`: lets the VAE decode run on the GPU. CPU
+    // decode is 30-60s per image at 768², GPU is a few seconds.
+    //
+    // `keep_clip_on_cpu = true`: the text encoder (Qwen3-4B for Z-Image,
+    // T5-XXL for SD3/Flux) is ~2 GB on GPU; keeping it on CPU saves that
+    // budget for the diffusion model. Text encoding runs once at the start
+    // of each generation so the CPU-side latency is hidden by the much
+    // longer sampling phase.
+    //
+    // `free_params_immediately = false`: sd.cpp's default is `true`, which
+    // releases the diffusion-model param tensors at the end of every
+    // `generate_image` call. The next generation against the same engine
+    // dereferences the now-freed pointers and crashes. We hold them for
+    // the lifetime of the `sd_ctx`; the engine actor caches per-modelId
+    // and HaploAI explicitly unloads on memory pressure, so we control
+    // lifetime up the stack.
+    //
+    // `diffusion_flash_attn = true` + `diffusion_conv_direct = true`:
+    // reduces attention + conv working memory.
+    // Stability over speed on iPhone. The two flips below were tried and
+    // crashed at ~78% (late-sample / VAE-decode handoff) — almost certainly
+    // jetsam: with offload_params_to_cpu=false the full ~4 GB diffusion
+    // weight set lives on the GPU heap simultaneously with the activations
+    // and (if keep_vae_on_cpu=false) the VAE, and the peak exceeds the
+    // increased-memory-limit cap. Returning to the proven-stable config.
+    //   p.offload_params_to_cpu = false;   // ← faster but crashes
+    //   p.keep_vae_on_cpu       = false;   // ← faster decode but adds GPU pressure
+    p.enable_mmap             = true;
+    p.offload_params_to_cpu   = true;
+    p.keep_clip_on_cpu        = true;
     p.keep_control_net_on_cpu = true;
-    p.keep_vae_on_cpu = false;
-    p.diffusion_flash_attn = true;
+    p.keep_vae_on_cpu         = true;
+    p.diffusion_flash_attn    = true;
+    p.diffusion_conv_direct   = true;
+    // Keep params alive across multiple `generate_image` calls. Without this,
+    // sd.cpp's default frees them at the end of each generation and the next
+    // call dereferences freed GPU buffers → second-image crash.
+    p.free_params_immediately = false;
+
+    // Log the resolved params before handing them to sd.cpp so we can verify
+    // from the device console which knobs actually took effect.
+    if (char* dump = sd_ctx_params_to_str(&p)) {
+        fprintf(stderr, "[mirage] sd_ctx_params resolved:\n%s\n", dump);
+        free(dump);
+    }
 
     sd_ctx_t* sd = new_sd_ctx(&p);
     if (!sd) {
@@ -157,4 +257,26 @@ extern "C" const char* mirage_last_error(void) {
 
 extern "C" const char* mirage_version(void) {
     return "0.1.0";
+}
+
+// MARK: - Progress callback
+
+namespace {
+
+mirage_progress_cb g_progress_cb = nullptr;
+void*              g_progress_user_data = nullptr;
+
+void mirage_sd_progress_trampoline(int step, int steps, float time_s, void* /*data*/) {
+    if (g_progress_cb) {
+        g_progress_cb(step, steps, time_s, g_progress_user_data);
+    }
+}
+
+} // namespace
+
+extern "C" void mirage_set_progress_callback(mirage_progress_cb cb, void* user_data) {
+    g_progress_cb = cb;
+    g_progress_user_data = user_data;
+    // sd.cpp accepts NULL to clear too.
+    sd_set_progress_callback(cb ? mirage_sd_progress_trampoline : nullptr, nullptr);
 }

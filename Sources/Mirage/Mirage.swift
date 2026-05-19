@@ -25,7 +25,35 @@ public enum Mirage {
     public static var nativeVersion: String {
         String(cString: mirage_version())
     }
+
+    /// Install a global progress callback fired once per denoising step.
+    /// `step` is 1-indexed, `total` is the configured `steps`, `elapsed` is
+    /// seconds since the previous step (the first call also includes any
+    /// per-graph warm-up time). Invoked on the engine's worker thread —
+    /// hop to your UI actor before touching view state. Pass `nil` to clear.
+    public static func setProgressCallback(_ cb: (@Sendable (_ step: Int, _ total: Int, _ elapsed: TimeInterval) -> Void)?) {
+        progressLock.lock()
+        progressClosure = cb
+        progressLock.unlock()
+
+        if cb != nil {
+            mirage_set_progress_callback({ step, total, time, _ in
+                progressLock.lock()
+                let c = progressClosure
+                progressLock.unlock()
+                c?(Int(step), Int(total), TimeInterval(time))
+            }, nil)
+        } else {
+            mirage_set_progress_callback(nil, nil)
+        }
+    }
 }
+
+// Closure storage for the global progress callback. Protected by `progressLock`
+// because sd.cpp invokes the C trampoline from its sampler thread while UI code
+// updates the closure from the main actor.
+nonisolated(unsafe) private var progressClosure: (@Sendable (Int, Int, TimeInterval) -> Void)?
+private let progressLock = NSLock()
 
 // MARK: - Model
 

@@ -84,6 +84,19 @@ const char* mirage_last_error(void);
 /// changes to the C ABI above.
 const char* mirage_version(void);
 
+// MARK: - Progress callback
+
+/// Called by the sampler once per denoising step. `step` is 1-indexed (1..steps),
+/// `total` is the configured `steps`, `time_s` is the elapsed seconds since the
+/// previous step (the first call reports cumulative warm-up + step 1 time).
+/// Fires on the engine's worker thread — bounce to your UI actor before
+/// touching any view state.
+typedef void (*mirage_progress_cb)(int32_t step, int32_t total, float time_s, void* user_data);
+
+/// Install a global progress callback. Pass NULL to clear. `user_data` is
+/// forwarded verbatim to each call. Safe to set before `mirage_ctx_create`.
+void mirage_set_progress_callback(mirage_progress_cb cb, void* user_data);
+
 #ifdef __cplusplus
 }
 #endif
