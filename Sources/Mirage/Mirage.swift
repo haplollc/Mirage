@@ -154,6 +154,11 @@ public struct VideoGenerationRequest: Sendable {
     /// Tile the VAE decode to cap peak memory. Costs a little speed;
     /// recommended anywhere memory is tight (i.e. every iPhone).
     public var vaeTiling: Bool = true
+    /// Latent-space tile edge when `vaeTiling` is on. 0 keeps the engine
+    /// default (32). Smaller tiles cut the decode's peak allocation —
+    /// needed on iPhone, where the default-tile decode buffer exceeds the
+    /// per-app memory ceiling at Wan's native resolutions.
+    public var vaeTileSize: Int = 0
 
     public init(
         prompt: String,
@@ -166,7 +171,8 @@ public struct VideoGenerationRequest: Sendable {
         flowShift: Float = 3.0,
         seed: Int64? = nil,
         initImage: CGImage? = nil,
-        vaeTiling: Bool = true
+        vaeTiling: Bool = true,
+        vaeTileSize: Int = 0
     ) {
         self.prompt = prompt
         self.negativePrompt = negativePrompt
@@ -179,6 +185,7 @@ public struct VideoGenerationRequest: Sendable {
         self.seed = seed
         self.initImage = initImage
         self.vaeTiling = vaeTiling
+        self.vaeTileSize = vaeTileSize
     }
 }
 
@@ -360,7 +367,8 @@ public actor Engine {
                         init_image_pixels: ip,
                         init_image_width: initW,
                         init_image_height: initH,
-                        vae_tiling: request.vaeTiling
+                        vae_tiling: request.vaeTiling,
+                        vae_tile_size: Int32(request.vaeTileSize)
                     )
                     return withUnsafePointer(to: &params) { pp in
                         mirage_generate_video(self.ctx, pp)

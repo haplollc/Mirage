@@ -76,6 +76,9 @@ typedef struct {
     int32_t init_image_width;
     int32_t init_image_height;
     bool    vae_tiling;                 ///< Tile the VAE decode to cap peak memory (recommended on iPhone).
+    int32_t vae_tile_size;              ///< Latent-space tile edge when tiling (0 = engine default, 32).
+                                        ///< Smaller tiles trade decode speed for a lower peak allocation:
+                                        ///< 480x832x13 measured ~12.7 GB at default tiles on CPU.
 } mirage_video_params;
 
 /// A generated clip as `frame_count` tightly-packed RGB8 frames laid out

@@ -306,6 +306,10 @@ extern "C" mirage_video* mirage_generate_video(mirage_ctx* ctx, const mirage_vid
     // pipeline (decoding the full frame stack at once). Essential on iPhone.
     if (params->vae_tiling) {
         v.vae_tiling_params.enabled = true;
+        if (params->vae_tile_size > 0) {
+            v.vae_tiling_params.tile_size_x = params->vae_tile_size;
+            v.vae_tiling_params.tile_size_y = params->vae_tile_size;
+        }
     }
 
     int num_frames = 0;
