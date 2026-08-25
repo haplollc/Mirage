@@ -33,6 +33,9 @@ typedef struct {
     const char* llm_path;               ///< LLM-style text encoder GGUF (Qwen3-4B for Z-Image, …).
     const char* t5xxl_path;             ///< T5-family text encoder GGUF (umt5-xxl for Wan video, T5 for SD3/Flux).
                                         ///< Distinct from `llm_path`: sd.cpp binds them to different tensor prefixes.
+    const char* taesd_path;             ///< Optional tiny autoencoder (TAESD/TAEHV, e.g. taew2_2 for Wan 2.2).
+                                        ///< When set it replaces the full VAE for decode — ~60× smaller file,
+                                        ///< seconds instead of minutes, softer texture.
 } mirage_model_paths;
 
 // MARK: - Generation parameters

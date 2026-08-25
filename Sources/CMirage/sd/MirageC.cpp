@@ -100,6 +100,7 @@ extern "C" mirage_ctx* mirage_ctx_create(const mirage_model_paths* paths) {
     if (paths->vae_path) { p.vae_path = paths->vae_path; }
     if (paths->llm_path) { p.llm_path = paths->llm_path; }
     if (paths->t5xxl_path) { p.t5xxl_path = paths->t5xxl_path; }
+    if (paths->taesd_path) { p.taesd_path = paths->taesd_path; }
 
     // Memory + speed tuning. Read the inline notes — each flag is the result
     // of a real iOS-only failure mode (jetsam, missing kernels, dangling

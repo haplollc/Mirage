@@ -74,13 +74,19 @@ public struct ModelFiles: Sendable {
     /// Wan video (or T5-XXL for SD3/Flux). Distinct from `textEncoder` because
     /// sd.cpp binds T5 weights to a different tensor prefix than LLM encoders.
     public var t5Encoder: URL?
+    /// Optional tiny autoencoder (TAESD/TAEHV — e.g. `taew2_2.safetensors`
+    /// for Wan 2.2). When set, sd.cpp decodes latents through it instead of
+    /// the full VAE: a ~23 MB file replacing 1.4 GB, and seconds of decode
+    /// instead of minutes, at the cost of softer texture.
+    public var taeDecoder: URL?
 
     public init(diffusionModel: URL, vae: URL? = nil, textEncoder: URL? = nil,
-                t5Encoder: URL? = nil) {
+                t5Encoder: URL? = nil, taeDecoder: URL? = nil) {
         self.diffusionModel = diffusionModel
         self.vae = vae
         self.textEncoder = textEncoder
         self.t5Encoder = t5Encoder
+        self.taeDecoder = taeDecoder
     }
 }
 
@@ -246,6 +252,7 @@ public actor Engine {
         let vae = models.vae?.path
         let llm = models.textEncoder?.path
         let t5 = models.t5Encoder?.path
+        let tae = models.taeDecoder?.path
 
         func withOptionalCString<T>(_ s: String?, _ body: (UnsafePointer<CChar>?) -> T) -> T {
             if let s = s { return s.withCString { body($0) } }
@@ -256,14 +263,17 @@ public actor Engine {
             withOptionalCString(vae) { vPtr in
                 withOptionalCString(llm) { lPtr in
                     withOptionalCString(t5) { tPtr in
-                        var paths = mirage_model_paths(
-                            diffusion_model_path: dPtr,
-                            vae_path: vPtr,
-                            llm_path: lPtr,
-                            t5xxl_path: tPtr
-                        )
-                        return withUnsafePointer(to: &paths) { pp -> OpaquePointer? in
-                            mirage_ctx_create(pp)
+                        withOptionalCString(tae) { taePtr in
+                            var paths = mirage_model_paths(
+                                diffusion_model_path: dPtr,
+                                vae_path: vPtr,
+                                llm_path: lPtr,
+                                t5xxl_path: tPtr,
+                                taesd_path: taePtr
+                            )
+                            return withUnsafePointer(to: &paths) { pp -> OpaquePointer? in
+                                mirage_ctx_create(pp)
+                            }
                         }
                     }
                 }
