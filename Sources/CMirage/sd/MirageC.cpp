@@ -12,6 +12,7 @@
 //
 
 #include "MirageC.h"
+#include <TargetConditionals.h>
 
 // stable-diffusion.cpp pulls in <stable-diffusion.h> which declares the
 // `sd_ctx_t` opaque type and the `new_sd_ctx`, `txt2img`, etc. entry points.
@@ -93,6 +94,16 @@ extern "C" mirage_ctx* mirage_ctx_create(const mirage_model_paths* paths) {
         g_log_cb_installed = true;
     }
 
+#if TARGET_OS_IPHONE
+    // Split Metal graphs across command buffers on iOS. With the default
+    // single command buffer, one video-DiT sampling step runs the GPU for
+    // tens of seconds uninterrupted — the iOS GPU watchdog kills it (seen
+    // as a whole-device crash mid-generation on iPhone 17 Pro Max). Eight
+    // shorter buffers keep each submission comfortably under the watchdog.
+    // setenv-without-overwrite so a debug override still wins.
+    setenv("GGML_METAL_N_CB", "32", 0);
+#endif
+
     // Build a default sd_ctx_params and override only what we expose.
     sd_ctx_params_t p;
     sd_ctx_params_init(&p);
@@ -154,6 +165,15 @@ extern "C" mirage_ctx* mirage_ctx_create(const mirage_model_paths* paths) {
     // sd.cpp's default frees them at the end of each generation and the next
     // call dereferences freed GPU buffers → second-image crash.
     p.free_params_immediately = false;
+#if TARGET_OS_IPHONE
+    // iPhone runs under a hard per-process memory cap (measured 6 GB on a
+    // 12 GB iPhone 17 Pro Max, jetsam reason "per-process-limit"). The text
+    // encoder is only needed for the one-time conditioning pass; freeing it
+    // before sampling reclaims ~3 GB of the budget. The app layer tears the
+    // engine down after each video generation, so the freed encoder is
+    // never reused.
+    p.free_cond_stage_immediately = true;
+#endif
 
     // Log the resolved params before handing them to sd.cpp so we can verify
     // from the device console which knobs actually took effect.
