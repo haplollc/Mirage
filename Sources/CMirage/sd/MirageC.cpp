@@ -99,6 +99,7 @@ extern "C" mirage_ctx* mirage_ctx_create(const mirage_model_paths* paths) {
     p.diffusion_model_path = paths->diffusion_model_path;
     if (paths->vae_path) { p.vae_path = paths->vae_path; }
     if (paths->llm_path) { p.llm_path = paths->llm_path; }
+    if (paths->t5xxl_path) { p.t5xxl_path = paths->t5xxl_path; }
 
     // Memory + speed tuning. Read the inline notes — each flag is the result
     // of a real iOS-only failure mode (jetsam, missing kernels, dangling
@@ -249,6 +250,123 @@ extern "C" void mirage_free_image(mirage_image* img) {
     std::free(img);
 }
 
+// MARK: - Video generation
+
+extern "C" bool mirage_supports_video(mirage_ctx* ctx) {
+    if (!ctx || !ctx->sd) return false;
+    return sd_ctx_supports_video_generation(ctx->sd);
+}
+
+extern "C" mirage_video* mirage_generate_video(mirage_ctx* ctx, const mirage_video_params* params) {
+    if (!ctx || !ctx->sd) {
+        set_last_error("mirage_generate_video: invalid context");
+        return nullptr;
+    }
+    if (!params || !params->prompt) {
+        set_last_error("mirage_generate_video: prompt is required");
+        return nullptr;
+    }
+    if (!sd_ctx_supports_video_generation(ctx->sd)) {
+        set_last_error("mirage_generate_video: loaded model does not support video generation");
+        return nullptr;
+    }
+
+    sd_vid_gen_params_t v;
+    sd_vid_gen_params_init(&v);
+    v.prompt          = params->prompt;
+    v.negative_prompt = params->negative_prompt ? params->negative_prompt : "";
+    v.width           = params->width  > 0 ? params->width  : 480;
+    v.height          = params->height > 0 ? params->height : 320;
+    // Wan's VAE compresses time 4x — the frame count must be 4n+1. Round
+    // down to the nearest legal count rather than failing the whole run.
+    int32_t frames = params->frames > 0 ? params->frames : 13;
+    if (frames > 1 && (frames - 1) % 4 != 0) {
+        frames = ((frames - 1) / 4) * 4 + 1;
+    }
+    v.video_frames = frames;
+    v.sample_params.sample_steps     = params->steps > 0 ? params->steps : 20;
+    v.sample_params.guidance.txt_cfg = params->cfg_scale > 0 ? params->cfg_scale : 6.0f;
+    v.sample_params.sample_method    = EULER_SAMPLE_METHOD;
+    if (params->flow_shift > 0) {
+        v.sample_params.flow_shift = params->flow_shift;
+    }
+    v.seed = params->seed;
+
+    // Optional init image → image-to-video. sd.cpp borrows the pixel
+    // buffer for the duration of the call, matching our borrow contract.
+    if (params->init_image_pixels &&
+        params->init_image_width > 0 && params->init_image_height > 0) {
+        v.init_image.width   = static_cast<uint32_t>(params->init_image_width);
+        v.init_image.height  = static_cast<uint32_t>(params->init_image_height);
+        v.init_image.channel = 3;
+        v.init_image.data    = const_cast<uint8_t*>(params->init_image_pixels);
+    }
+
+    // Tiled VAE decode caps the largest single allocation of the whole
+    // pipeline (decoding the full frame stack at once). Essential on iPhone.
+    if (params->vae_tiling) {
+        v.vae_tiling_params.enabled = true;
+    }
+
+    int num_frames = 0;
+    sd_image_t* result = generate_video(ctx->sd, &v, &num_frames);
+    if (!result || num_frames <= 0) {
+        if (result) std::free(result);
+        set_last_error("generate_video returned NULL");
+        return nullptr;
+    }
+
+    const int32_t w = static_cast<int32_t>(result[0].width);
+    const int32_t h = static_cast<int32_t>(result[0].height);
+    const int32_t c = static_cast<int32_t>(result[0].channel);
+    const size_t frame_bytes = static_cast<size_t>(w) * h * c;
+
+    auto free_result = [&]() {
+        for (int i = 0; i < num_frames; ++i) {
+            if (result[i].data) std::free(result[i].data);
+        }
+        std::free(result);
+    };
+
+    auto* video = static_cast<mirage_video*>(std::malloc(sizeof(mirage_video)));
+    if (!video) {
+        set_last_error("mirage_generate_video: out of memory allocating video struct");
+        free_result();
+        return nullptr;
+    }
+    video->width       = w;
+    video->height      = h;
+    video->channels    = c;
+    video->frame_count = num_frames;
+    video->pixels      = static_cast<uint8_t*>(std::malloc(frame_bytes * num_frames));
+    if (!video->pixels) {
+        set_last_error("mirage_generate_video: out of memory allocating frame buffer");
+        free_result();
+        std::free(video);
+        return nullptr;
+    }
+    for (int i = 0; i < num_frames; ++i) {
+        // Frames should be homogeneous; guard anyway so a short frame can't
+        // read out of bounds.
+        if (result[i].data &&
+            result[i].width == result[0].width &&
+            result[i].height == result[0].height &&
+            result[i].channel == result[0].channel) {
+            std::memcpy(video->pixels + frame_bytes * i, result[i].data, frame_bytes);
+        } else {
+            std::memset(video->pixels + frame_bytes * i, 0, frame_bytes);
+        }
+    }
+    free_result();
+    return video;
+}
+
+extern "C" void mirage_free_video(mirage_video* video) {
+    if (!video) return;
+    if (video->pixels) std::free(video->pixels);
+    std::free(video);
+}
+
 // MARK: - Diagnostics
 
 extern "C" const char* mirage_last_error(void) {
@@ -256,7 +374,7 @@ extern "C" const char* mirage_last_error(void) {
 }
 
 extern "C" const char* mirage_version(void) {
-    return "0.2.0";
+    return "0.3.0";
 }
 
 // MARK: - Progress callback

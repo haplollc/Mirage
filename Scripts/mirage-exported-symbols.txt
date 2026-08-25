@@ -14,3 +14,6 @@ _mirage_free_image
 _mirage_last_error
 _mirage_version
 _mirage_set_progress_callback
+_mirage_supports_video
+_mirage_generate_video
+_mirage_free_video

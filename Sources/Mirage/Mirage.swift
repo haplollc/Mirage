@@ -67,14 +67,20 @@ public struct ModelFiles: Sendable {
     public var diffusionModel: URL
     /// VAE encoder/decoder weights, e.g. FLUX's `ae.safetensors`.
     public var vae: URL?
-    /// Text encoder weights, e.g. `Qwen3-4B-Instruct-2507-Q4_K_M.gguf` for
-    /// Z-Image, T5-XXL for SD3, etc.
+    /// LLM-style text encoder weights, e.g. `Qwen3-4B-Instruct-2507-Q4_K_M.gguf`
+    /// for Z-Image. sd.cpp binds this to its `llm` tensor prefix.
     public var textEncoder: URL?
+    /// T5-family text encoder weights, e.g. `umt5-xxl-encoder-Q4_K_M.gguf` for
+    /// Wan video (or T5-XXL for SD3/Flux). Distinct from `textEncoder` because
+    /// sd.cpp binds T5 weights to a different tensor prefix than LLM encoders.
+    public var t5Encoder: URL?
 
-    public init(diffusionModel: URL, vae: URL? = nil, textEncoder: URL? = nil) {
+    public init(diffusionModel: URL, vae: URL? = nil, textEncoder: URL? = nil,
+                t5Encoder: URL? = nil) {
         self.diffusionModel = diffusionModel
         self.vae = vae
         self.textEncoder = textEncoder
+        self.t5Encoder = t5Encoder
     }
 }
 
@@ -118,6 +124,72 @@ public struct GenerationRequest: Sendable {
     }
 }
 
+// MARK: - Video generation request
+
+/// Inputs to one video-generation call. Defaults follow the upstream Wan 2.2
+/// TI2V 5B recipe (euler / cfg 6.0 / flow-shift 3.0).
+public struct VideoGenerationRequest: Sendable {
+    /// User-facing prompt. UTF-8.
+    public var prompt: String
+    /// Optional negative prompt. Wan responds strongly to its upstream
+    /// default negative prompt — pass it through unless the caller overrides.
+    public var negativePrompt: String?
+    /// Frame width in pixels. Multiple of 16 (Wan's VAE compresses 16×).
+    public var width: Int = 480
+    /// Frame height in pixels. Multiple of 16.
+    public var height: Int = 320
+    /// Frame count. Wan requires `4n + 1` (13, 17, 21, …, 33); illegal
+    /// counts are rounded down to the nearest legal one by the engine.
+    public var frames: Int = 13
+    /// Sampling steps. Wan 2.2 5B: 15-25.
+    public var steps: Int = 20
+    /// Classifier-free guidance scale. Wan 2.2 TI2V 5B: 6.0.
+    public var cfgScale: Float = 6.0
+    /// Flow-matching shift. Wan: 3.0.
+    public var flowShift: Float = 3.0
+    /// RNG seed. Pass nil for a random seed.
+    public var seed: Int64? = nil
+    /// Optional still image to animate (image-to-video). Nil = text-to-video.
+    public var initImage: CGImage? = nil
+    /// Tile the VAE decode to cap peak memory. Costs a little speed;
+    /// recommended anywhere memory is tight (i.e. every iPhone).
+    public var vaeTiling: Bool = true
+
+    public init(
+        prompt: String,
+        negativePrompt: String? = nil,
+        width: Int = 480,
+        height: Int = 320,
+        frames: Int = 13,
+        steps: Int = 20,
+        cfgScale: Float = 6.0,
+        flowShift: Float = 3.0,
+        seed: Int64? = nil,
+        initImage: CGImage? = nil,
+        vaeTiling: Bool = true
+    ) {
+        self.prompt = prompt
+        self.negativePrompt = negativePrompt
+        self.width = width
+        self.height = height
+        self.frames = frames
+        self.steps = steps
+        self.cfgScale = cfgScale
+        self.flowShift = flowShift
+        self.seed = seed
+        self.initImage = initImage
+        self.vaeTiling = vaeTiling
+    }
+}
+
+/// One generated clip: ordered RGB frames plus their geometry. Feed the
+/// frames to `AVAssetWriter` (or any encoder) to produce a movie file.
+public struct GeneratedVideo: Sendable {
+    public let width: Int
+    public let height: Int
+    public let frames: [CGImage]
+}
+
 // MARK: - Errors
 
 public enum MirageError: Error, CustomStringConvertible, Sendable {
@@ -131,6 +203,8 @@ public enum MirageError: Error, CustomStringConvertible, Sendable {
     case invalidNativeImage(String)
     /// `CGImage` construction from the pixel buffer failed.
     case cgImageCreationFailed
+    /// The loaded model cannot generate video (image-only checkpoint).
+    case videoUnsupported
 
     public var description: String {
         switch self {
@@ -138,6 +212,7 @@ public enum MirageError: Error, CustomStringConvertible, Sendable {
         case .generationFailed(let s):    return "Kiln-Image: generation failed — \(s)"
         case .invalidNativeImage(let s):  return "Kiln-Image: native image invalid — \(s)"
         case .cgImageCreationFailed:      return "Kiln-Image: failed to build CGImage from pixel buffer"
+        case .videoUnsupported:           return "Kiln-Image: loaded model does not support video generation"
         }
     }
 }
@@ -163,6 +238,7 @@ public actor Engine {
         let diffusion = models.diffusionModel.path
         let vae = models.vae?.path
         let llm = models.textEncoder?.path
+        let t5 = models.t5Encoder?.path
 
         func withOptionalCString<T>(_ s: String?, _ body: (UnsafePointer<CChar>?) -> T) -> T {
             if let s = s { return s.withCString { body($0) } }
@@ -172,13 +248,16 @@ public actor Engine {
         let result: OpaquePointer? = diffusion.withCString { dPtr in
             withOptionalCString(vae) { vPtr in
                 withOptionalCString(llm) { lPtr in
-                    var paths = mirage_model_paths(
-                        diffusion_model_path: dPtr,
-                        vae_path: vPtr,
-                        llm_path: lPtr
-                    )
-                    return withUnsafePointer(to: &paths) { pp -> OpaquePointer? in
-                        mirage_ctx_create(pp)
+                    withOptionalCString(t5) { tPtr in
+                        var paths = mirage_model_paths(
+                            diffusion_model_path: dPtr,
+                            vae_path: vPtr,
+                            llm_path: lPtr,
+                            t5xxl_path: tPtr
+                        )
+                        return withUnsafePointer(to: &paths) { pp -> OpaquePointer? in
+                            mirage_ctx_create(pp)
+                        }
                     }
                 }
             }
@@ -237,12 +316,123 @@ public actor Engine {
         return cg
     }
 
+    /// True if the loaded checkpoint can generate video (Wan / SVD family).
+    public var supportsVideo: Bool {
+        mirage_supports_video(ctx)
+    }
+
+    /// Generate one video clip. Frames are detached from the native buffer —
+    /// the C-side allocation is freed before this returns. Progress callbacks
+    /// (see `Mirage.setProgressCallback`) fire once per denoising step.
+    public func generateVideo(_ request: VideoGenerationRequest) async throws -> GeneratedVideo {
+        guard mirage_supports_video(ctx) else {
+            throw MirageError.videoUnsupported
+        }
+
+        let promptHolder = request.prompt
+        let negHolder = request.negativePrompt ?? ""
+
+        // Flatten the optional init image to a tightly-packed RGB8 buffer.
+        var initPixels: [UInt8]? = nil
+        var initW: Int32 = 0
+        var initH: Int32 = 0
+        if let cg = request.initImage {
+            if let rgb = Self.makeRGB8(from: cg) {
+                initPixels = rgb
+                initW = Int32(cg.width)
+                initH = Int32(cg.height)
+            }
+        }
+
+        let videoPtr: UnsafeMutablePointer<mirage_video>? = promptHolder.withCString { pPtr in
+            negHolder.withCString { nPtr -> UnsafeMutablePointer<mirage_video>? in
+                func run(_ ip: UnsafePointer<UInt8>?) -> UnsafeMutablePointer<mirage_video>? {
+                    var params = mirage_video_params(
+                        prompt: pPtr,
+                        negative_prompt: request.negativePrompt == nil ? nil : nPtr,
+                        width: Int32(request.width),
+                        height: Int32(request.height),
+                        frames: Int32(request.frames),
+                        steps: Int32(request.steps),
+                        cfg_scale: request.cfgScale,
+                        flow_shift: request.flowShift,
+                        seed: request.seed ?? -1,
+                        init_image_pixels: ip,
+                        init_image_width: initW,
+                        init_image_height: initH,
+                        vae_tiling: request.vaeTiling
+                    )
+                    return withUnsafePointer(to: &params) { pp in
+                        mirage_generate_video(self.ctx, pp)
+                    }
+                }
+                if let initPixels {
+                    return initPixels.withUnsafeBufferPointer { run($0.baseAddress) }
+                }
+                return run(nil)
+            }
+        }
+
+        guard let videoPtr = videoPtr else {
+            throw MirageError.generationFailed(Self.lastNativeError())
+        }
+        defer { mirage_free_video(videoPtr) }
+
+        let v = videoPtr.pointee
+        guard v.width > 0, v.height > 0, v.frame_count > 0,
+              v.channels == 3 || v.channels == 4 else {
+            throw MirageError.invalidNativeImage(
+                "got width=\(v.width) height=\(v.height) channels=\(v.channels) frames=\(v.frame_count)"
+            )
+        }
+
+        let frameBytes = Int(v.width) * Int(v.height) * Int(v.channels)
+        var frames: [CGImage] = []
+        frames.reserveCapacity(Int(v.frame_count))
+        for i in 0..<Int(v.frame_count) {
+            let frame = mirage_image(
+                width: v.width, height: v.height, channels: v.channels,
+                pixels: v.pixels.advanced(by: frameBytes * i)
+            )
+            guard let cg = Self.makeCGImage(from: frame) else {
+                throw MirageError.cgImageCreationFailed
+            }
+            frames.append(cg)
+        }
+        return GeneratedVideo(width: Int(v.width), height: Int(v.height), frames: frames)
+    }
+
     // MARK: Private
 
     private static func lastNativeError() -> String {
         guard let cstr = mirage_last_error() else { return "(no error message)" }
         let s = String(cString: cstr)
         return s.isEmpty ? "(no error message)" : s
+    }
+
+    /// Render any CGImage into a tightly-packed RGB8 buffer (no alpha, no
+    /// row padding) — the layout sd.cpp expects for init images.
+    private static func makeRGB8(from cg: CGImage) -> [UInt8]? {
+        let w = cg.width, h = cg.height
+        var rgba = [UInt8](repeating: 0, count: w * h * 4)
+        let ok: Bool = rgba.withUnsafeMutableBytes { buf in
+            guard let ctx = CGContext(
+                data: buf.baseAddress, width: w, height: h,
+                bitsPerComponent: 8, bytesPerRow: w * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
+        }
+        guard ok else { return nil }
+        var rgb = [UInt8](repeating: 0, count: w * h * 3)
+        for i in 0..<(w * h) {
+            rgb[i * 3 + 0] = rgba[i * 4 + 0]
+            rgb[i * 3 + 1] = rgba[i * 4 + 1]
+            rgb[i * 3 + 2] = rgba[i * 4 + 2]
+        }
+        return rgb
     }
 
     private static func makeCGImage(from img: mirage_image) -> CGImage? {

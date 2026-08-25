@@ -30,7 +30,9 @@ typedef struct mirage_ctx mirage_ctx;
 typedef struct {
     const char* diffusion_model_path;   ///< The .gguf or .safetensors diffusion transformer weights.
     const char* vae_path;               ///< VAE encoder/decoder weights (often Flux's ae.safetensors).
-    const char* llm_path;               ///< Text encoder GGUF (Qwen3-4B for Z-Image, T5 for SD3/Flux, …).
+    const char* llm_path;               ///< LLM-style text encoder GGUF (Qwen3-4B for Z-Image, …).
+    const char* t5xxl_path;             ///< T5-family text encoder GGUF (umt5-xxl for Wan video, T5 for SD3/Flux).
+                                        ///< Distinct from `llm_path`: sd.cpp binds them to different tensor prefixes.
 } mirage_model_paths;
 
 // MARK: - Generation parameters
@@ -54,6 +56,50 @@ typedef struct {
     int32_t  channels;                  ///< Always 4 (RGBA).
     uint8_t* pixels;                    ///< Owned by Kiln; freed by `mirage_free_image`.
 } mirage_image;
+
+// MARK: - Video generation
+
+/// Inputs to one video-generation call (Wan-family models). `init_image_*`
+/// enables image-to-video: pass a tightly-packed RGB8 buffer to animate a
+/// still; leave `init_image_pixels` NULL for pure text-to-video.
+typedef struct {
+    const char* prompt;                 ///< User prompt, UTF-8.
+    const char* negative_prompt;        ///< Optional negative prompt. NULL = none.
+    int32_t width;                      ///< Frame width in pixels (multiple of 16 for Wan's VAE).
+    int32_t height;                     ///< Frame height in pixels (multiple of 16).
+    int32_t frames;                     ///< Frame count. Wan requires 4n+1 (13, 17, …, 33).
+    int32_t steps;                      ///< Sampling steps. Wan 2.2 5B: 15-25.
+    float   cfg_scale;                  ///< CFG scale. Wan 2.2 TI2V 5B: 6.0.
+    float   flow_shift;                 ///< Flow-matching shift. Wan: 3.0. <= 0 keeps sd.cpp's default.
+    int64_t seed;                       ///< RNG seed. -1 picks a random one.
+    const uint8_t* init_image_pixels;   ///< Optional RGB8 init image for image-to-video. NULL = text-to-video.
+    int32_t init_image_width;
+    int32_t init_image_height;
+    bool    vae_tiling;                 ///< Tile the VAE decode to cap peak memory (recommended on iPhone).
+} mirage_video_params;
+
+/// A generated clip as `frame_count` tightly-packed RGB8 frames laid out
+/// back-to-back in one buffer (`frame_count * width * height * channels`
+/// bytes). Encode to a movie container on the Swift side (AVAssetWriter).
+typedef struct {
+    int32_t  width;
+    int32_t  height;
+    int32_t  channels;                  ///< 3 (RGB) for video decode.
+    int32_t  frame_count;
+    uint8_t* pixels;                    ///< Owned by Mirage; freed by `mirage_free_video`.
+} mirage_video;
+
+/// True if the loaded model can run `mirage_generate_video` (Wan / SVD
+/// family). Image-only models return false.
+bool mirage_supports_video(mirage_ctx* ctx);
+
+/// Run the video sampler and return a heap-allocated `mirage_video*`.
+/// NULL on failure (see `mirage_last_error`). Caller frees with
+/// `mirage_free_video`. Progress callbacks fire once per denoising step.
+mirage_video* mirage_generate_video(mirage_ctx* ctx, const mirage_video_params* params);
+
+/// Release a clip returned by `mirage_generate_video`.
+void mirage_free_video(mirage_video* video);
 
 // MARK: - Lifecycle
 
