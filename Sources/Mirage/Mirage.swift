@@ -201,6 +201,12 @@ public struct GeneratedVideo: Sendable {
     public let width: Int
     public let height: Int
     public let frames: [CGImage]
+
+    public init(width: Int, height: Int, frames: [CGImage]) {
+        self.width = width
+        self.height = height
+        self.frames = frames
+    }
 }
 
 // MARK: - Errors

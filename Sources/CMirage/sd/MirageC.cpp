@@ -113,6 +113,14 @@ extern "C" mirage_ctx* mirage_ctx_create(const mirage_model_paths* paths) {
     if (paths->t5xxl_path) { p.t5xxl_path = paths->t5xxl_path; }
     if (paths->taesd_path) { p.taesd_path = paths->taesd_path; }
 
+    // sd_ctx_params_init defaults vae_decode_only=true, which loads every
+    // autoencoder WITHOUT its encoder half. Any image-conditioned path
+    // (img2img, video i2v, chained segment continuation) then dereferences
+    // a null encoder inside encode_first_stage — observed as SIGSEGV in
+    // TAEHV::encode on iPhone. We expose init-image inputs across the API,
+    // so always load the encoder; for the tiny TAEs it costs ~10 MB.
+    p.vae_decode_only = false;
+
     // Memory + speed tuning. Read the inline notes — each flag is the result
     // of a real iOS-only failure mode (jetsam, missing kernels, dangling
     // freed params on second generation, etc.).
