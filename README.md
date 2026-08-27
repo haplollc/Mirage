@@ -87,7 +87,11 @@ targets: [
 
 Or in Xcode: **File ▸ Add Package Dependencies…** → `https://github.com/haplollc/Mirage`
 
-The package ships a prebuilt `sdcpp.xcframework` (Apple Silicon + iOS device + iOS simulator) as a SPM binary target — **no cmake / ninja / clang++ wrangling required on consumer machines**.
+The package consumes a prebuilt `sdcpp.xcframework` (Apple Silicon + iOS device + iOS simulator) as a SPM binary target — **no cmake / ninja / clang++ wrangling required on consumer machines**. The framework itself is not in git: fresh checkouts grab it from the latest `sdcpp-*` GitHub release with one command:
+
+```bash
+./Scripts/fetch-xcframework.sh   # requires the gh CLI, ~30 s
+```
 
 ---
 
@@ -318,9 +322,17 @@ your prompt + model paths               │   Mirage (Swift) │
 
 ---
 
-## Building from source
+## Getting the XCFramework
 
-The XCFramework is reproducible. After cloning:
+Two ways — fetch the prebuilt one (fast path, what app devs want):
+
+```bash
+./Scripts/fetch-xcframework.sh        # downloads the latest sdcpp-* release (~30 s)
+```
+
+…or rebuild it from the vendored sources (required whenever
+`Sources/CMirage/vendor` changes; publish the result as a new `sdcpp-*`
+release so fetchers stay current):
 
 ```bash
 git submodule update --init --recursive
