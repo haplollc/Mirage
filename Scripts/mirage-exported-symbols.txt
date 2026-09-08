@@ -17,3 +17,6 @@ _mirage_set_progress_callback
 _mirage_supports_video
 _mirage_generate_video
 _mirage_free_video
+_mirage_upscaler_create
+_mirage_upscaler_free
+_mirage_upscale

@@ -56,6 +56,8 @@ build_slice() {
             -DSD_BUILD_EXAMPLES=OFF \
             -DSD_BUILD_SERVER=OFF \
             -DSD_BUILD_SHARED_LIBS=OFF \
+            -DSD_WEBP=OFF \
+            -DSD_WEBM=OFF \
             -DCMAKE_OSX_ARCHITECTURES="$ARCHS" \
             -DCMAKE_OSX_DEPLOYMENT_TARGET="$CMAKE_OSX_DEPLOYMENT_TARGET" \
             $EXTRA_CMAKE
@@ -69,6 +71,8 @@ build_slice() {
             -DSD_BUILD_EXAMPLES=OFF \
             -DSD_BUILD_SERVER=OFF \
             -DSD_BUILD_SHARED_LIBS=OFF \
+            -DSD_WEBP=OFF \
+            -DSD_WEBM=OFF \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_SYSROOT="$SYSROOT" \
             -DCMAKE_OSX_ARCHITECTURES="$ARCHS" \

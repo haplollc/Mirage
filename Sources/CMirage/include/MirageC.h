@@ -125,6 +125,30 @@ mirage_image* mirage_generate(mirage_ctx* ctx, const mirage_gen_params* params);
 /// Release an image returned by `mirage_generate`.
 void mirage_free_image(mirage_image* img);
 
+// MARK: - Upscaling (ESRGAN)
+
+/// Opaque handle to a loaded ESRGAN-family upscaler.
+typedef struct mirage_upscaler mirage_upscaler;
+
+/// Load an ESRGAN upscaler from `esrgan_path` (RealESRGAN-class
+/// .safetensors/.pth). `tile_size` bounds peak memory during the conv
+/// pass; 0 uses the library default. NULL on failure (see
+/// `mirage_last_error`).
+mirage_upscaler* mirage_upscaler_create(const char* esrgan_path, int32_t tile_size);
+
+/// Release an upscaler created by `mirage_upscaler_create`.
+void mirage_upscaler_free(mirage_upscaler* up);
+
+/// Upscale one tightly-packed RGBA8 image by `factor` (2 or 4; values
+/// beyond the model's native factor are clamped by the library). Returns
+/// a `mirage_image*` the caller frees with `mirage_free_image`. NULL on
+/// failure.
+mirage_image* mirage_upscale(mirage_upscaler* up,
+                             const uint8_t* rgba,
+                             int32_t width,
+                             int32_t height,
+                             int32_t factor);
+
 // MARK: - Diagnostics
 
 /// Human-readable description of the last failure on this thread. Empty

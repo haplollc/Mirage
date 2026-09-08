@@ -508,3 +508,112 @@ public extension CGImage {
         return cf as Data
     }
 }
+
+// MARK: - Upscaler
+
+/// ESRGAN-family super-resolution, wrapping the native `mirage_upscaler`.
+/// Used as the optional second pass after video/image generation: frames
+/// come out of the diffusion pipeline at the model's native resolution and
+/// this inflates them 2-4x with learned detail.
+///
+/// Thread-safety mirrors `Engine`: create/use/free from any single thread
+/// or actor; calls are internally synchronous.
+public final class Upscaler {
+
+    private let handle: OpaquePointer
+
+    /// The model's native scale factor (4 for RealESRGAN_x4plus).
+    public var nativeFactor: Int { 4 }
+
+    /// Loads an ESRGAN-class model (.pth / .safetensors).
+    /// - Parameter tileSize: caps peak memory during the conv pass;
+    ///   0 uses the library default. Use ~128-256 on iPhone.
+    public init(modelURL: URL, tileSize: Int = 0) throws {
+        let up: OpaquePointer? = modelURL.path.withCString { cPath in
+            mirage_upscaler_create(cPath, Int32(tileSize))
+        }
+        guard let up else {
+            throw MirageError.modelLoadFailed(Self.lastError())
+        }
+        handle = up
+    }
+
+    deinit {
+        mirage_upscaler_free(handle)
+    }
+
+    /// Upscales one frame by `factor`. The ESRGAN always renders at its
+    /// native factor (4x for RealESRGAN_x4plus); smaller requested factors
+    /// are produced by Lanczos-downscaling that output — supersampling,
+    /// which reads cleaner than a native low-factor model would.
+    public func upscale(_ image: CGImage, factor: Int = 2) throws -> CGImage {
+        let w = image.width, h = image.height
+        var rgba = [UInt8](repeating: 0, count: w * h * 4)
+        let drawn: Bool = rgba.withUnsafeMutableBytes { buf in
+            guard let ctx = CGContext(
+                data: buf.baseAddress, width: w, height: h,
+                bitsPerComponent: 8, bytesPerRow: w * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
+        }
+        guard drawn else { throw MirageError.cgImageCreationFailed }
+
+        guard let out = rgba.withUnsafeBufferPointer({ buf in
+            mirage_upscale(handle, buf.baseAddress, Int32(w), Int32(h), Int32(factor))
+        }) else {
+            throw MirageError.generationFailed(Self.lastError())
+        }
+        defer { mirage_free_image(out) }
+
+        guard let cg = Self.cgImage(from: out.pointee) else {
+            throw MirageError.cgImageCreationFailed
+        }
+        // Downscale native-factor output to the requested size when needed.
+        let targetW = image.width * factor
+        let targetH = image.height * factor
+        if cg.width != targetW || cg.height != targetH,
+           let scaled = Self.resized(cg, width: targetW, height: targetH) {
+            return scaled
+        }
+        return cg
+    }
+
+    private static func resized(_ cg: CGImage, width: Int, height: Int) -> CGImage? {
+        guard let ctx = CGContext(
+            data: nil, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        ) else { return nil }
+        ctx.interpolationQuality = .high
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return ctx.makeImage()
+    }
+
+    // MARK: Private
+
+    private static func lastError() -> String {
+        guard let cstr = mirage_last_error() else { return "(no error message)" }
+        let s = String(cString: cstr)
+        return s.isEmpty ? "(no error message)" : s
+    }
+
+    private static func cgImage(from img: mirage_image) -> CGImage? {
+        let w = Int(img.width), h = Int(img.height), c = Int(img.channels)
+        let bytes = w * h * c
+        guard let pixels = img.pixels else { return nil }
+        let data = Data(bytes: pixels, count: bytes)
+        guard let provider = CGDataProvider(data: data as CFData) else { return nil }
+        return CGImage(
+            width: w, height: h,
+            bitsPerComponent: 8, bitsPerPixel: 8 * c, bytesPerRow: w * c,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+            provider: provider, decode: nil,
+            shouldInterpolate: false, intent: .defaultIntent
+        )
+    }
+}

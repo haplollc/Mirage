@@ -57,6 +57,7 @@ void mirage_sd_log_cb(enum sd_log_level_t level, const char* text, void* /*data*
         case SD_LOG_WARN:  tag = "WARN"; break;
         case SD_LOG_INFO:  tag = "info"; break;
         case SD_LOG_DEBUG: tag = "dbg "; break;
+        case SD_LOG_VERBOSE: tag = "verb"; break;
     }
     fprintf(stderr, "[mirage sd %s] %s%s", tag, text,
             (text[0] && text[strlen(text)-1] == '\n') ? "" : "\n");
@@ -113,75 +114,39 @@ extern "C" mirage_ctx* mirage_ctx_create(const mirage_model_paths* paths) {
     if (paths->t5xxl_path) { p.t5xxl_path = paths->t5xxl_path; }
     if (paths->taesd_path) { p.taesd_path = paths->taesd_path; }
 
-    // sd_ctx_params_init defaults vae_decode_only=true, which loads every
-    // autoencoder WITHOUT its encoder half. Any image-conditioned path
-    // (img2img, video i2v, chained segment continuation) then dereferences
-    // a null encoder inside encode_first_stage — observed as SIGSEGV in
-    // TAEHV::encode on iPhone. We expose init-image inputs across the API,
-    // so always load the encoder; for the tiny TAEs it costs ~10 MB.
-    p.vae_decode_only = false;
-
-    // Memory + speed tuning. Read the inline notes — each flag is the result
-    // of a real iOS-only failure mode (jetsam, missing kernels, dangling
-    // freed params on second generation, etc.).
+    // Memory model (upstream 2026-09 residency rework): module placement is
+    // expressed as assignment strings instead of the old boolean knobs.
     //
-    // `enable_mmap = true`: cuts peak load memory from ~2× weights (read +
-    // upload) to ~1× (lazily paged-in working set). Required on iPhone or
-    // jetsam kills the app during weight load.
+    // `backend` = where each module's COMPUTE runs. Unlisted modules use the
+    // default backend (Metal on Apple silicon). The text encoder and VAE run
+    // on CPU — same proven split as the old keep_clip_on_cpu/keep_vae_on_cpu
+    // config: TE runs once per generation (latency hidden by sampling) and
+    // the tiny-TAE video decode is CPU-fast, while the GPU budget stays
+    // dedicated to the diffusion model.
     //
-    // `offload_params_to_cpu = false`: keeps diffusion params resident in
-    // Metal buffers for the lifetime of the engine. With mmap on, the path
-    // goes through `buffer_from_host_ptr` (zero-copy on Apple Silicon's
-    // unified memory) so no extra footprint vs offload=true, but per-op
-    // sampling avoids the CPU↔GPU copy and runs 3-5× faster.
+    // `params_backend` = where module WEIGHTS live between ops. "cpu" is the
+    // old offload_params_to_cpu=true: weights held in (mmap-backed) host
+    // memory, streamed to Metal per-op — the stable config on iPhone's 6 GB
+    // process cap. On iOS the text encoder goes one step further with
+    // "te=disk": its weights stream straight from disk for the one
+    // conditioning pass and are never resident during sampling. This
+    // replaces the old fork-only free_cond_stage_immediately patch — and
+    // unlike that patch, the engine stays reusable after conditioning.
     //
-    // `keep_vae_on_cpu = false`: lets the VAE decode run on the GPU. CPU
-    // decode is 30-60s per image at 768², GPU is a few seconds.
+    // `enable_mmap = true`: cuts peak load memory from ~2x weights to ~1x.
+    // Required on iPhone or jetsam kills the app during weight load.
     //
-    // `keep_clip_on_cpu = true`: the text encoder (Qwen3-4B for Z-Image,
-    // T5-XXL for SD3/Flux) is ~2 GB on GPU; keeping it on CPU saves that
-    // budget for the diffusion model. Text encoding runs once at the start
-    // of each generation so the CPU-side latency is hidden by the much
-    // longer sampling phase.
-    //
-    // `free_params_immediately = false`: sd.cpp's default is `true`, which
-    // releases the diffusion-model param tensors at the end of every
-    // `generate_image` call. The next generation against the same engine
-    // dereferences the now-freed pointers and crashes. We hold them for
-    // the lifetime of the `sd_ctx`; the engine actor caches per-modelId
-    // and HaploAI explicitly unloads on memory pressure, so we control
-    // lifetime up the stack.
-    //
-    // `diffusion_flash_attn = true` + `diffusion_conv_direct = true`:
-    // reduces attention + conv working memory.
-    // Stability over speed on iPhone. The two flips below were tried and
-    // crashed at ~78% (late-sample / VAE-decode handoff) — almost certainly
-    // jetsam: with offload_params_to_cpu=false the full ~4 GB diffusion
-    // weight set lives on the GPU heap simultaneously with the activations
-    // and (if keep_vae_on_cpu=false) the VAE, and the peak exceeds the
-    // increased-memory-limit cap. Returning to the proven-stable config.
-    //   p.offload_params_to_cpu = false;   // ← faster but crashes
-    //   p.keep_vae_on_cpu       = false;   // ← faster decode but adds GPU pressure
-    p.enable_mmap             = true;
-    p.offload_params_to_cpu   = true;
-    p.keep_clip_on_cpu        = true;
-    p.keep_control_net_on_cpu = true;
-    p.keep_vae_on_cpu         = true;
-    p.diffusion_flash_attn    = true;
-    p.diffusion_conv_direct   = true;
-    // Keep params alive across multiple `generate_image` calls. Without this,
-    // sd.cpp's default frees them at the end of each generation and the next
-    // call dereferences freed GPU buffers → second-image crash.
-    p.free_params_immediately = false;
+    // `diffusion_flash_attn` + `diffusion_conv_direct`: reduce attention +
+    // conv working memory.
+    p.backend        = "te=cpu,vae=cpu,controlnet=cpu";
 #if TARGET_OS_IPHONE
-    // iPhone runs under a hard per-process memory cap (measured 6 GB on a
-    // 12 GB iPhone 17 Pro Max, jetsam reason "per-process-limit"). The text
-    // encoder is only needed for the one-time conditioning pass; freeing it
-    // before sampling reclaims ~3 GB of the budget. The app layer tears the
-    // engine down after each video generation, so the freed encoder is
-    // never reused.
-    p.free_cond_stage_immediately = true;
+    p.params_backend = "all=cpu,te=disk";
+#else
+    p.params_backend = "cpu";
 #endif
+    p.enable_mmap           = true;
+    p.diffusion_flash_attn  = true;
+    p.diffusion_conv_direct = true;
 
     // Log the resolved params before handing them to sd.cpp so we can verify
     // from the device console which knobs actually took effect.
@@ -231,16 +196,18 @@ extern "C" mirage_image* mirage_generate(mirage_ctx* ctx, const mirage_gen_param
     g.seed = params->seed;
     g.batch_count = params->batch_size > 0 ? params->batch_size : 1;
 
-    sd_image_t* result = generate_image(ctx->sd, &g);
-    if (!result) {
-        set_last_error("generate_image returned NULL");
+    sd_image_t* result = nullptr;
+    int num_images = 0;
+    if (!generate_image(ctx->sd, &g, &result, &num_images) || !result || num_images <= 0) {
+        if (result) std::free(result);
+        set_last_error("generate_image failed");
         return nullptr;
     }
 
     auto* img = static_cast<mirage_image*>(std::malloc(sizeof(mirage_image)));
     if (!img) {
         set_last_error("mirage_generate: out of memory allocating image struct");
-        for (int i = 0; i < g.batch_count; ++i) {
+        for (int i = 0; i < num_images; ++i) {
             if (result[i].data) std::free(result[i].data);
         }
         std::free(result);
@@ -256,7 +223,7 @@ extern "C" mirage_image* mirage_generate(mirage_ctx* ctx, const mirage_gen_param
     img->pixels = static_cast<uint8_t*>(std::malloc(bytes));
     if (!img->pixels) {
         set_last_error("mirage_generate: out of memory allocating pixel buffer");
-        for (int i = 0; i < g.batch_count; ++i) {
+        for (int i = 0; i < num_images; ++i) {
             if (result[i].data) std::free(result[i].data);
         }
         std::free(result);
@@ -265,7 +232,7 @@ extern "C" mirage_image* mirage_generate(mirage_ctx* ctx, const mirage_gen_param
     }
     std::memcpy(img->pixels, result[0].data, bytes);
 
-    for (int i = 0; i < g.batch_count; ++i) {
+    for (int i = 0; i < num_images; ++i) {
         if (result[i].data) std::free(result[i].data);
     }
     std::free(result);
@@ -342,10 +309,13 @@ extern "C" mirage_video* mirage_generate_video(mirage_ctx* ctx, const mirage_vid
     }
 
     int num_frames = 0;
-    sd_image_t* result = generate_video(ctx->sd, &v, &num_frames);
-    if (!result || num_frames <= 0) {
+    sd_image_t* result = nullptr;
+    // audio_out=nullptr is null-guarded upstream: models with an audio
+    // branch (MiniMax H3) simply skip audio decode.
+    if (!generate_video(ctx->sd, &v, &result, &num_frames, nullptr) ||
+        !result || num_frames <= 0) {
         if (result) std::free(result);
-        set_last_error("generate_video returned NULL");
+        set_last_error("generate_video failed");
         return nullptr;
     }
 
@@ -430,4 +400,89 @@ extern "C" void mirage_set_progress_callback(mirage_progress_cb cb, void* user_d
     g_progress_user_data = user_data;
     // sd.cpp accepts NULL to clear too.
     sd_set_progress_callback(cb ? mirage_sd_progress_trampoline : nullptr, nullptr);
+}
+
+
+// MARK: - Upscaling (ESRGAN)
+//
+// Thin bridge over sd.cpp's upscaler_ctx_t. The Swift side traffics in
+// RGBA8 (matching mirage_image); sd.cpp's ESRGAN wants RGB8, so both
+// directions convert here, keeping the ABI a single pixel format.
+
+struct mirage_upscaler {
+    upscaler_ctx_t* ctx;
+};
+
+extern "C" mirage_upscaler* mirage_upscaler_create(const char* esrgan_path, int32_t tile_size) {
+    if (!esrgan_path) return nullptr;
+    // Default backend placement (Metal): ESRGAN weights are ~65MB — keep
+    // them resident for speed. direct=false: standard conv path.
+    upscaler_ctx_t* ctx = new_upscaler_ctx(esrgan_path,
+                                           /*direct=*/false,
+                                           /*n_threads=*/-1,
+                                           tile_size,
+                                           /*backend=*/nullptr,
+                                           /*params_backend=*/nullptr);
+    if (!ctx) {
+        set_last_error("new_upscaler_ctx returned NULL — bad path or unsupported arch");
+        return nullptr;
+    }
+    auto* up = new mirage_upscaler{ctx};
+    return up;
+}
+
+extern "C" void mirage_upscaler_free(mirage_upscaler* up) {
+    if (!up) return;
+    if (up->ctx) free_upscaler_ctx(up->ctx);
+    delete up;
+}
+
+extern "C" mirage_image* mirage_upscale(mirage_upscaler* up,
+                                        const uint8_t* rgba,
+                                        int32_t width,
+                                        int32_t height,
+                                        int32_t factor) {
+    if (!up || !up->ctx || !rgba || width <= 0 || height <= 0) return nullptr;
+
+    // RGBA8 → RGB8 for sd.cpp.
+    const size_t n = (size_t)width * height;
+    uint8_t* rgb = (uint8_t*)malloc(n * 3);
+    if (!rgb) return nullptr;
+    for (size_t i = 0; i < n; i++) {
+        rgb[i * 3 + 0] = rgba[i * 4 + 0];
+        rgb[i * 3 + 1] = rgba[i * 4 + 1];
+        rgb[i * 3 + 2] = rgba[i * 4 + 2];
+    }
+    sd_image_t in{ (uint32_t)width, (uint32_t)height, 3, rgb };
+
+    sd_image_t* outs = nullptr;
+    int num_out = 0;
+    bool ok = upscale(up->ctx, in, (uint32_t)factor, &outs, &num_out);
+    free(rgb);
+    if (!ok || !outs || num_out <= 0 || !outs[0].data) {
+        if (outs) free(outs);
+        set_last_error("upscale failed");
+        return nullptr;
+    }
+    sd_image_t out = outs[0];
+
+    // RGB8 → RGBA8 mirage_image (Swift hands this straight to CGImage).
+    auto* img = (mirage_image*)malloc(sizeof(mirage_image));
+    const size_t on = (size_t)out.width * out.height;
+    img->width = (int32_t)out.width;
+    img->height = (int32_t)out.height;
+    img->channels = 4;
+    img->pixels = (uint8_t*)malloc(on * 4);
+    for (size_t i = 0; i < on; i++) {
+        img->pixels[i * 4 + 0] = out.data[i * 3 + 0];
+        img->pixels[i * 4 + 1] = out.data[i * 3 + 1];
+        img->pixels[i * 4 + 2] = out.data[i * 3 + 2];
+        img->pixels[i * 4 + 3] = 255;
+    }
+    free(out.data);
+    for (int i = 1; i < num_out; i++) {
+        if (outs[i].data) free(outs[i].data);
+    }
+    free(outs);
+    return img;
 }
