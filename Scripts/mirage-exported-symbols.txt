@@ -20,3 +20,12 @@ _mirage_free_video
 _mirage_upscaler_create
 _mirage_upscaler_free
 _mirage_upscale
+_mirage_tts_create
+_mirage_tts_free
+_mirage_tts_speaker_count
+_mirage_tts_speaker_name
+_mirage_tts_language_count
+_mirage_tts_language_name
+_mirage_tts_sample_rate
+_mirage_tts_synthesize
+_mirage_tts_last_error

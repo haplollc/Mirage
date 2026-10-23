@@ -1,3 +1,6 @@
 [submodule "Sources/CMirage/vendor/sd-cpp"]
 	path = Sources/CMirage/vendor/sd-cpp
 	url = https://github.com/haplollc/stable-diffusion.cpp.git
+[submodule "Sources/CMirage/vendor/qwentts"]
+	path = Sources/CMirage/vendor/qwentts
+	url = https://github.com/ServeurpersoCom/qwentts.cpp.git

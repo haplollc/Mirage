@@ -79,14 +79,19 @@ public struct ModelFiles: Sendable {
     /// the full VAE: a ~23 MB file replacing 1.4 GB, and seconds of decode
     /// instead of minutes, at the cost of softer texture.
     public var taeDecoder: URL?
+    /// Optional external `tokenizer.json`, for text encoders whose GGUF
+    /// vocabulary differs from the one the model expects (Ming-Image's
+    /// Ling-mini-2.0, MOSS-Image's Qwen3.5). Nil uses the encoder's own.
+    public var tokenizer: URL?
 
     public init(diffusionModel: URL, vae: URL? = nil, textEncoder: URL? = nil,
-                t5Encoder: URL? = nil, taeDecoder: URL? = nil) {
+                t5Encoder: URL? = nil, taeDecoder: URL? = nil, tokenizer: URL? = nil) {
         self.diffusionModel = diffusionModel
         self.vae = vae
         self.textEncoder = textEncoder
         self.t5Encoder = t5Encoder
         self.taeDecoder = taeDecoder
+        self.tokenizer = tokenizer
     }
 }
 
@@ -110,6 +115,12 @@ public struct GenerationRequest: Sendable {
     public var cfgScale: Float = 1.0
     /// RNG seed. Pass nil for a random seed.
     public var seed: Int64? = nil
+    /// Fixed noise schedule for distilled models that ship one (Iris-3B
+    /// Turbo: 1, 0.938, 0.833, 0.625, 0). `steps + 1` values ending in 0;
+    /// overrides `steps`. Nil uses the model's default scheduler.
+    public var customSigmas: [Float]? = nil
+    /// Flow-matching shift override. Nil keeps the model default.
+    public var flowShift: Float? = nil
 
     public init(
         prompt: String,
@@ -118,7 +129,9 @@ public struct GenerationRequest: Sendable {
         height: Int = 1024,
         steps: Int = 9,
         cfgScale: Float = 1.0,
-        seed: Int64? = nil
+        seed: Int64? = nil,
+        customSigmas: [Float]? = nil,
+        flowShift: Float? = nil
     ) {
         self.prompt = prompt
         self.negativePrompt = negativePrompt
@@ -127,6 +140,8 @@ public struct GenerationRequest: Sendable {
         self.steps = steps
         self.cfgScale = cfgScale
         self.seed = seed
+        self.customSigmas = customSigmas
+        self.flowShift = flowShift
     }
 }
 
@@ -259,6 +274,7 @@ public actor Engine {
         let llm = models.textEncoder?.path
         let t5 = models.t5Encoder?.path
         let tae = models.taeDecoder?.path
+        let tokenizer = models.tokenizer?.path
 
         func withOptionalCString<T>(_ s: String?, _ body: (UnsafePointer<CChar>?) -> T) -> T {
             if let s = s { return s.withCString { body($0) } }
@@ -270,15 +286,18 @@ public actor Engine {
                 withOptionalCString(llm) { lPtr in
                     withOptionalCString(t5) { tPtr in
                         withOptionalCString(tae) { taePtr in
-                            var paths = mirage_model_paths(
-                                diffusion_model_path: dPtr,
-                                vae_path: vPtr,
-                                llm_path: lPtr,
-                                t5xxl_path: tPtr,
-                                taesd_path: taePtr
-                            )
-                            return withUnsafePointer(to: &paths) { pp -> OpaquePointer? in
-                                mirage_ctx_create(pp)
+                            withOptionalCString(tokenizer) { tokPtr in
+                                var paths = mirage_model_paths(
+                                    diffusion_model_path: dPtr,
+                                    vae_path: vPtr,
+                                    llm_path: lPtr,
+                                    t5xxl_path: tPtr,
+                                    taesd_path: taePtr,
+                                    tokenizer_path: tokPtr
+                                )
+                                return withUnsafePointer(to: &paths) { pp -> OpaquePointer? in
+                                    mirage_ctx_create(pp)
+                                }
                             }
                         }
                     }
@@ -303,20 +322,26 @@ public actor Engine {
         let promptHolder = request.prompt
         let negHolder = request.negativePrompt ?? ""
 
+        let sigmas = request.customSigmas ?? []
         let imgPtr: UnsafeMutablePointer<mirage_image>? = promptHolder.withCString { pPtr in
             negHolder.withCString { nPtr in
-                var params = mirage_gen_params(
-                    prompt: pPtr,
-                    negative_prompt: request.negativePrompt == nil ? nil : nPtr,
-                    width: Int32(request.width),
-                    height: Int32(request.height),
-                    steps: Int32(request.steps),
-                    cfg_scale: request.cfgScale,
-                    seed: request.seed ?? -1,
-                    batch_size: 1
-                )
-                return withUnsafePointer(to: &params) { pp in
-                    mirage_generate(self.ctx, pp)
+                sigmas.withUnsafeBufferPointer { sigmaBuf in
+                    var params = mirage_gen_params(
+                        prompt: pPtr,
+                        negative_prompt: request.negativePrompt == nil ? nil : nPtr,
+                        width: Int32(request.width),
+                        height: Int32(request.height),
+                        steps: Int32(request.steps),
+                        cfg_scale: request.cfgScale,
+                        seed: request.seed ?? -1,
+                        batch_size: 1,
+                        custom_sigmas: sigmas.isEmpty ? nil : sigmaBuf.baseAddress,
+                        custom_sigmas_count: Int32(sigmas.count),
+                        flow_shift: request.flowShift ?? 0
+                    )
+                    return withUnsafePointer(to: &params) { pp in
+                        mirage_generate(self.ctx, pp)
+                    }
                 }
             }
         }
@@ -615,5 +640,98 @@ public final class Upscaler {
             provider: provider, decode: nil,
             shouldInterpolate: false, intent: .defaultIntent
         )
+    }
+}
+
+// MARK: - Speech synthesis
+
+/// Qwen3-TTS (qwentts.cpp) on Mirage's ggml: text in, 24 kHz mono float PCM
+/// out, streamed chunk by chunk so playback can start after the first
+/// ~80 ms frame instead of waiting for the whole utterance.
+///
+/// Load once per talker; the weights stay resident until the engine is
+/// released. Calls are serialized by the actor.
+public actor SpeechEngine {
+
+    /// Sample rate of every chunk `synthesize` emits.
+    public static let sampleRate = Int(mirage_tts_sample_rate())
+
+    private let handle: OpaquePointer
+
+    /// Named voices of a custom-voice talker ("ryan", "vivian", …). Empty
+    /// for base talkers, which speak in a default voice.
+    public nonisolated let speakers: [String]
+    /// Languages the talker accepts ("english", "chinese", …).
+    public nonisolated let languages: [String]
+
+    /// Load a talker GGUF (`qwen-talker-*.gguf`) with the shared codec GGUF
+    /// (`qwen-tokenizer-12hz-*.gguf`).
+    public init(talker: URL, codec: URL) throws {
+        let created: OpaquePointer? = talker.path.withCString { t in
+            codec.path.withCString { c in mirage_tts_create(t, c) }
+        }
+        guard let created else {
+            throw MirageError.modelLoadFailed(String(cString: mirage_tts_last_error()))
+        }
+        handle = created
+        speakers = (0..<mirage_tts_speaker_count(created)).compactMap { i in
+            mirage_tts_speaker_name(created, i).map { String(cString: $0) }
+        }
+        languages = (0..<mirage_tts_language_count(created)).compactMap { i in
+            mirage_tts_language_name(created, i).map { String(cString: $0) }
+        }
+    }
+
+    deinit {
+        mirage_tts_free(handle)
+    }
+
+    /// Speak `text`, handing each decoded chunk of samples to `onChunk` as it
+    /// is produced. `onChunk` runs on the engine's worker thread, so it must
+    /// only enqueue the samples; return false from it to stop early. Throws
+    /// when synthesis fails or is stopped.
+    public func synthesize(
+        _ text: String,
+        speaker: String? = nil,
+        language: String? = nil,
+        instruct: String? = nil,
+        seed: Int64? = nil,
+        onChunk: @escaping @Sendable ([Float]) -> Bool
+    ) throws {
+        final class Relay {
+            let onChunk: @Sendable ([Float]) -> Bool
+            init(_ onChunk: @escaping @Sendable ([Float]) -> Bool) { self.onChunk = onChunk }
+        }
+        let relay = Unmanaged.passRetained(Relay(onChunk))
+        defer { relay.release() }
+
+        func withOptionalCString<T>(_ s: String?, _ body: (UnsafePointer<CChar>?) -> T) -> T {
+            if let s { return s.withCString { body($0) } }
+            return body(nil)
+        }
+
+        let ok: Bool = text.withCString { textPtr in
+            withOptionalCString(language) { langPtr in
+                withOptionalCString(speaker) { speakerPtr in
+                    withOptionalCString(instruct) { instructPtr in
+                        var params = mirage_tts_params(
+                            text: textPtr,
+                            language: langPtr,
+                            speaker: speakerPtr,
+                            instruct: instructPtr,
+                            seed: seed ?? -1
+                        )
+                        return mirage_tts_synthesize(handle, &params, { samples, count, user in
+                            guard let samples, let user, count > 0 else { return true }
+                            let relay = Unmanaged<Relay>.fromOpaque(user).takeUnretainedValue()
+                            return relay.onChunk(Array(UnsafeBufferPointer(start: samples, count: Int(count))))
+                        }, relay.toOpaque())
+                    }
+                }
+            }
+        }
+        if !ok {
+            throw MirageError.generationFailed(String(cString: mirage_tts_last_error()))
+        }
     }
 }

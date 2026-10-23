@@ -113,6 +113,7 @@ extern "C" mirage_ctx* mirage_ctx_create(const mirage_model_paths* paths) {
     if (paths->llm_path) { p.llm_path = paths->llm_path; }
     if (paths->t5xxl_path) { p.t5xxl_path = paths->t5xxl_path; }
     if (paths->taesd_path) { p.taesd_path = paths->taesd_path; }
+    if (paths->tokenizer_path) { p.tokenizer = paths->tokenizer_path; }
 
     // Memory model (upstream 2026-09 residency rework): module placement is
     // expressed as assignment strings instead of the old boolean knobs.
@@ -144,6 +145,11 @@ extern "C" mirage_ctx* mirage_ctx_create(const mirage_model_paths* paths) {
 #else
     p.params_backend = "cpu";
 #endif
+    // Debug override for measuring placements without a rebuild, e.g.
+    // MIRAGE_BACKEND="controlnet=cpu" runs the text encoder and VAE on Metal.
+    if (const char* override_backend = getenv("MIRAGE_BACKEND")) {
+        p.backend = override_backend;
+    }
     p.enable_mmap           = true;
     p.diffusion_flash_attn  = true;
     p.diffusion_conv_direct = true;
@@ -193,6 +199,14 @@ extern "C" mirage_image* mirage_generate(mirage_ctx* ctx, const mirage_gen_param
     g.sample_params.sample_steps = params->steps > 0 ? params->steps : 9;
     g.sample_params.guidance.txt_cfg = params->cfg_scale > 0 ? params->cfg_scale : 1.0f;
     g.sample_params.sample_method = EULER_SAMPLE_METHOD;
+    if (params->custom_sigmas && params->custom_sigmas_count > 1) {
+        g.sample_params.custom_sigmas = const_cast<float*>(params->custom_sigmas);
+        g.sample_params.custom_sigmas_count = params->custom_sigmas_count;
+        g.sample_params.sample_steps = params->custom_sigmas_count - 1;
+    }
+    if (params->flow_shift > 0) {
+        g.sample_params.flow_shift = params->flow_shift;
+    }
     g.seed = params->seed;
     g.batch_count = params->batch_size > 0 ? params->batch_size : 1;
 
@@ -303,8 +317,13 @@ extern "C" mirage_video* mirage_generate_video(mirage_ctx* ctx, const mirage_vid
     if (params->vae_tiling) {
         v.vae_tiling_params.enabled = true;
         if (params->vae_tile_size > 0) {
-            v.vae_tiling_params.tile_size_x = params->vae_tile_size;
-            v.vae_tiling_params.tile_size_y = params->vae_tile_size;
+            // The ABI takes a latent-space edge, but sd.cpp now sizes tiles
+            // in image pixels. Wan 2.2's VAE compresses 16x spatially; every
+            // other video VAE we load (Wan 2.1 for LingBot) compresses 8x.
+            const char* version = sd_get_model_version_name(ctx->sd);
+            const int scale = (version && std::strstr(version, "Wan 2.2")) ? 16 : 8;
+            v.vae_tiling_params.tile_size_w = params->vae_tile_size * scale;
+            v.vae_tiling_params.tile_size_h = params->vae_tile_size * scale;
         }
     }
 
@@ -312,7 +331,7 @@ extern "C" mirage_video* mirage_generate_video(mirage_ctx* ctx, const mirage_vid
     sd_image_t* result = nullptr;
     // audio_out=nullptr is null-guarded upstream: models with an audio
     // branch (MiniMax H3) simply skip audio decode.
-    if (!generate_video(ctx->sd, &v, &result, &num_frames, nullptr) ||
+    if (!generate_video(ctx->sd, &v, &result, &num_frames, nullptr, nullptr) ||
         !result || num_frames <= 0) {
         if (result) std::free(result);
         set_last_error("generate_video failed");
@@ -377,7 +396,7 @@ extern "C" const char* mirage_last_error(void) {
 }
 
 extern "C" const char* mirage_version(void) {
-    return "0.3.0";
+    return "0.4.0";
 }
 
 // MARK: - Progress callback

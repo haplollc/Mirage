@@ -36,6 +36,9 @@ typedef struct {
     const char* taesd_path;             ///< Optional tiny autoencoder (TAESD/TAEHV, e.g. taew2_2 for Wan 2.2).
                                         ///< When set it replaces the full VAE for decode — ~60× smaller file,
                                         ///< seconds instead of minutes, softer texture.
+    const char* tokenizer_path;         ///< Optional external tokenizer.json for text encoders whose GGUF
+                                        ///< vocabulary differs from the one sd.cpp embeds (Ming-Image's Ling,
+                                        ///< MOSS-Image's Qwen3.5). NULL = the encoder's own tokenizer.
 } mirage_model_paths;
 
 // MARK: - Generation parameters
@@ -49,6 +52,11 @@ typedef struct {
     float   cfg_scale;                  ///< Classifier-free guidance scale. Turbo models use 1.0.
     int64_t seed;                       ///< RNG seed. -1 picks a random one.
     int32_t batch_size;                 ///< Number of images per call. Default 1.
+    const float* custom_sigmas;         ///< Optional fixed noise schedule, steps + 1 values ending in 0
+                                        ///< (distilled models that ship their own, e.g. Iris-3B Turbo).
+                                        ///< NULL = the model's default scheduler. Borrowed for the call.
+    int32_t custom_sigmas_count;
+    float   flow_shift;                 ///< Flow-matching shift override. <= 0 keeps the model default.
 } mirage_gen_params;
 
 /// One generated image as a tightly-packed RGBA8 buffer the Swift side can
@@ -148,6 +156,55 @@ mirage_image* mirage_upscale(mirage_upscaler* up,
                              int32_t width,
                              int32_t height,
                              int32_t factor);
+
+// MARK: - Speech synthesis (Qwen3-TTS)
+
+/// Opaque handle to a loaded Qwen3-TTS model pair (qwentts.cpp).
+typedef struct mirage_tts mirage_tts;
+
+/// Load a Qwen3-TTS talker GGUF (`qwen-talker-*.gguf`) and the shared 12 Hz
+/// codec GGUF (`qwen-tokenizer-12hz-*.gguf`). NULL on failure (see
+/// `mirage_tts_last_error`). Free with `mirage_tts_free`.
+mirage_tts* mirage_tts_create(const char* talker_path, const char* codec_path);
+
+/// Release a model pair created by `mirage_tts_create`.
+void mirage_tts_free(mirage_tts* tts);
+
+/// Named speakers of a custom-voice talker (e.g. "ryan", "vivian"). Zero for
+/// base talkers. Names are owned by the engine and live as long as it does.
+int32_t mirage_tts_speaker_count(mirage_tts* tts);
+const char* mirage_tts_speaker_name(mirage_tts* tts, int32_t index);
+
+/// Languages the talker accepts ("english", "chinese", …).
+int32_t mirage_tts_language_count(mirage_tts* tts);
+const char* mirage_tts_language_name(mirage_tts* tts, int32_t index);
+
+/// Output rate of every synthesized chunk: mono float PCM at 24 kHz.
+int32_t mirage_tts_sample_rate(void);
+
+typedef struct {
+    const char* text;                   ///< Text to speak, UTF-8. Required.
+    const char* language;               ///< Language name, or NULL to let the model infer it.
+    const char* speaker;                ///< Named speaker for custom-voice talkers. NULL for base.
+    const char* instruct;               ///< Optional style instruction ("speak softly"). NULL = none.
+    int64_t seed;                       ///< RNG seed. -1 picks a random one.
+} mirage_tts_params;
+
+/// Called with each decoded chunk of audio as it streams out (first chunk
+/// after one 80 ms frame). Runs on the engine's worker thread; `samples` is
+/// valid only during the call. Return false to stop synthesis early.
+typedef bool (*mirage_tts_chunk_cb)(const float* samples, int32_t count, void* user_data);
+
+/// Synthesize `params->text`, streaming audio through `on_chunk`. Blocks
+/// until the utterance ends or the callback stops it. Returns false on
+/// failure or early stop (see `mirage_tts_last_error`).
+bool mirage_tts_synthesize(mirage_tts* tts,
+                           const mirage_tts_params* params,
+                           mirage_tts_chunk_cb on_chunk,
+                           void* user_data);
+
+/// Human-readable description of the last speech failure on this thread.
+const char* mirage_tts_last_error(void);
 
 // MARK: - Diagnostics
 
