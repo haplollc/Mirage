@@ -10,6 +10,7 @@
 [![Platforms](https://img.shields.io/badge/platforms-iOS%2017+%20|%20macOS%2014+%20|%20visionOS-blue.svg)](https://swift.org)
 [![SPM](https://img.shields.io/badge/SPM-compatible-brightgreen.svg)](https://swift.org/package-manager/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey.svg)](LICENSE)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/jcbuilds)
 
 <table>
 <tr>
