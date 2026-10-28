@@ -1,21 +1,5 @@
-<div align="center">
-
-# 🎨 Mirage
-
-### A one-stop on-device diffusion image-generation engine for iOS, macOS, and visionOS.
-
-<sub>Swift package · Metal-accelerated · GGUF & safetensors · drop-in for any sd.cpp-compatible model</sub>
-
-[![Swift](https://img.shields.io/badge/Swift-5.9+-orange.svg)](https://swift.org)
-[![Platforms](https://img.shields.io/badge/platforms-iOS%2017+%20|%20macOS%2014+%20|%20visionOS-blue.svg)](https://swift.org)
-[![SPM](https://img.shields.io/badge/SPM-compatible-brightgreen.svg)](https://swift.org/package-manager/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey.svg)](LICENSE)
-
-<p align="center">
-  <a href="https://buymeacoffee.com/jcbuilds"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" width="200"></a>
-  <br>
-  <sub>If Mirage is useful to you, a coffee keeps it going.</sub>
-</p>
+# Mirage
+A one-stop on-device diffusion image-generation engine for iOS, macOS and visionOS that runs anything stable-diffusion.cpp can load, with no Core ML conversion required.
 
 <table>
 <tr>
@@ -30,13 +14,48 @@
 </tr>
 </table>
 
-</div>
+<p align="center">
+[![Swift](https://img.shields.io/badge/Swift-5.9+-orange.svg)](https://swift.org)
+[![Platforms](https://img.shields.io/badge/platforms-iOS%2017+%20|%20macOS%2014+%20|%20visionOS-blue.svg)](https://swift.org)
+[![SPM](https://img.shields.io/badge/SPM-compatible-brightgreen.svg)](https://swift.org/package-manager/)
+  [![GitHub stars](https://img.shields.io/github/stars/haplollc/Mirage?style=flat)](https://github.com/haplollc/Mirage/stargazers)
+  [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+</p>
+
+<p align="center">
+  <a href="https://buymeacoffee.com/jcbuilds"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" width="200"></a>
+  <br>
+  <sub>If Mirage is useful to you, a coffee keeps it going.</sub>
+</p>
+
+**Install**
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/haplollc/Mirage.git", from: "0.1.0"),
+]
+```
+
+**Try it**
+
+```swift
+import Mirage
+
+let engine = try Engine(models: ModelFiles(
+    diffusionModel: zImageTurboGGUF,
+    vae: fluxVAE,
+    textEncoder: qwen3GGUF
+))
+let image = try await engine.generate(.init(prompt: "..."))
+```
+
+If this is useful, a star helps others find it.
 
 ---
 
 ## Why Mirage?
 
-Apple's `ml-stable-diffusion` is great for the **specific** Stable Diffusion checkpoints Apple converted to Core ML — and stops there. Every new diffusion model (Flux, Z-Image, Qwen-Image, ERNIE-Image, Chroma, …) requires its own custom Core ML conversion that takes Apple weeks to publish, if it happens at all.
+Apple's `ml-stable-diffusion` is great for the **specific** Stable Diffusion checkpoints Apple converted to Core ML - and stops there. Every new diffusion model (Flux, Z-Image, Qwen-Image, ERNIE-Image, Chroma, …) requires its own custom Core ML conversion that takes Apple weeks to publish, if it happens at all.
 
 Mirage takes a different approach: **embed [`stable-diffusion.cpp`](https://github.com/leejet/stable-diffusion.cpp) + `ggml-metal`** into a clean Swift package. Anything sd.cpp can load, Mirage can run. No Core ML conversion required.
 
@@ -57,7 +76,7 @@ That's the whole public surface.
 
 ## Supported model families
 
-Every model below works through the same `Engine` — only the file inputs change.
+Every model below works through the same `Engine` - only the file inputs change.
 
 | Family | Architecture | Example | Status |
 |---|---|---|---|
@@ -70,11 +89,11 @@ Every model below works through the same `Engine` — only the file inputs chang
 | **[ERNIE-Image-Turbo](https://huggingface.co/unsloth/ERNIE-Image-Turbo-GGUF)** | DiT (Turbo-distilled) | `ernie-image-turbo.gguf` | ✅ |
 | **[Z-Image-Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo)** | S3-DiT (6B, Turbo, 8 steps) | `z-image-turbo-Q3_K_M.gguf` | ✅ |
 
-Mirrored, mobile-friendly bundles ship on Hugging Face — each repo includes the diffusion weights, the right text encoder, the right VAE, and a `README.md` with copy-pastable `Engine(...)` snippets:
+Mirrored, mobile-friendly bundles ship on Hugging Face - each repo includes the diffusion weights, the right text encoder, the right VAE, and a `README.md` with copy-pastable `Engine(...)` snippets:
 
-- 🐶 [`jc-builds/Z-Image-Turbo-iOS`](https://huggingface.co/jc-builds/Z-Image-Turbo-iOS) — 6 B params, 9-step turbo, **6.5 GB**
-- 📜 [`jc-builds/ERNIE-Image-Turbo-iOS`](https://huggingface.co/jc-builds/ERNIE-Image-Turbo-iOS) — 8 B params, best-in-class text rendering, **5.9 GB**
-- 🎨 [`jc-builds/Chroma1-HD-iOS`](https://huggingface.co/jc-builds/Chroma1-HD-iOS) — 8.9 B FLUX-derived, T5-XXL, **14.5 GB** (iPhone 17 Pro / Mac only)
+- 🐶 [`jc-builds/Z-Image-Turbo-iOS`](https://huggingface.co/jc-builds/Z-Image-Turbo-iOS) - 6 B params, 9-step turbo, **6.5 GB**
+- 📜 [`jc-builds/ERNIE-Image-Turbo-iOS`](https://huggingface.co/jc-builds/ERNIE-Image-Turbo-iOS) - 8 B params, best-in-class text rendering, **5.9 GB**
+- 🎨 [`jc-builds/Chroma1-HD-iOS`](https://huggingface.co/jc-builds/Chroma1-HD-iOS) - 8.9 B FLUX-derived, T5-XXL, **14.5 GB** (iPhone 17 Pro / Mac only)
 
 ---
 
@@ -93,7 +112,7 @@ targets: [
 
 Or in Xcode: **File ▸ Add Package Dependencies…** → `https://github.com/haplollc/Mirage`
 
-The package consumes a prebuilt `sdcpp.xcframework` (Apple Silicon + iOS device + iOS simulator) as a SPM binary target — **no cmake / ninja / clang++ wrangling required on consumer machines**. The framework itself is not in git: fresh checkouts grab it from the latest `sdcpp-*` GitHub release with one command:
+The package consumes a prebuilt `sdcpp.xcframework` (Apple Silicon + iOS device + iOS simulator) as a SPM binary target - **no cmake / ninja / clang++ wrangling required on consumer machines**. The framework itself is not in git: fresh checkouts grab it from the latest `sdcpp-*` GitHub release with one command:
 
 ```bash
 ./Scripts/fetch-xcframework.sh   # requires the gh CLI, ~30 s
@@ -122,7 +141,7 @@ struct ImageGenScreen: View {
             vae: try modelURL("ae.safetensors"),
             textEncoder: try modelURL("Qwen3-4B-Instruct-2507-Q4_K_M.gguf")
         )
-        // 2. Create the engine ONCE — loading weights is multi-GB I/O + GPU upload.
+        // 2. Create the engine ONCE - loading weights is multi-GB I/O + GPU upload.
         self.engine = try Engine(models: models)
     }
 
@@ -168,7 +187,7 @@ A complete reference app lives in [`Examples/MirageExampleApp`](Examples/MirageE
 
 ## Running on iPhone
 
-Mirage works on physical iPhones (tested on iPhone 17 Pro with Z-Image-Turbo Q3_K_M). Getting there required a few specific build- and link-time choices documented below — if you're embedding Mirage in an app that also links **llama.cpp** (or any other ggml fork), read this section before debugging weird Metal crashes.
+Mirage works on physical iPhones (tested on iPhone 17 Pro with Z-Image-Turbo Q3_K_M). Getting there required a few specific build- and link-time choices documented below - if you're embedding Mirage in an app that also links **llama.cpp** (or any other ggml fork), read this section before debugging weird Metal crashes.
 
 ### Required app-side setup
 
@@ -215,11 +234,11 @@ guard avail == 0 || needed <= avail else {
 
 ### Symbol-collision gotcha (READ THIS if you also link llama.cpp)
 
-`libmirage-sdcpp.a` partial-links sd.cpp + ggml + ggml-metal with `ld -r -exported_symbols_list` so only the public `mirage_*` C entry points are globally visible. Every other symbol — including `_ggml_metal_library_init`, `_ggml_backend_graph_compute`, all the kernel-encoder functions — is local to the archive.
+`libmirage-sdcpp.a` partial-links sd.cpp + ggml + ggml-metal with `ld -r -exported_symbols_list` so only the public `mirage_*` C entry points are globally visible. Every other symbol - including `_ggml_metal_library_init`, `_ggml_backend_graph_compute`, all the kernel-encoder functions - is local to the archive.
 
-This is intentional. The Mirage native engine is sd.cpp's vendored ggml-metal commit. Many apps that ship Mirage also vendor **llama.cpp**, which compiles its OWN copy of the same-named ggml-metal functions from a different commit. Without symbol hiding, Apple's ld picks the first definition it finds (usually llama's, depending on link order), and **every** sd.cpp call into ggml-metal at runtime routes into llama's older code — which has a different kernel set, a different metallib resource lookup, and a different binding ABI. The symptoms range from `"Function kernel_mul_mm_bf16_f32 was not found in the library"` (llama's metallib doesn't have bf16 mul_mm) to `EXC_BAD_ACCESS` deep in `ggml_metal_encoder_set_pipeline` (NULL pipeline lookup against a sibling's kernel cache).
+This is intentional. The Mirage native engine is sd.cpp's vendored ggml-metal commit. Many apps that ship Mirage also vendor **llama.cpp**, which compiles its OWN copy of the same-named ggml-metal functions from a different commit. Without symbol hiding, Apple's ld picks the first definition it finds (usually llama's, depending on link order), and **every** sd.cpp call into ggml-metal at runtime routes into llama's older code - which has a different kernel set, a different metallib resource lookup, and a different binding ABI. The symptoms range from `"Function kernel_mul_mm_bf16_f32 was not found in the library"` (llama's metallib doesn't have bf16 mul_mm) to `EXC_BAD_ACCESS` deep in `ggml_metal_encoder_set_pipeline` (NULL pipeline lookup against a sibling's kernel cache).
 
-If you rebuild the XCFramework yourself, **do not** replace the `ld -r` step with `libtool -static` — `libtool -static` leaves every symbol exported and reintroduces the collision. The build script's sanity-check fails the build if the collision is detectable.
+If you rebuild the XCFramework yourself, **do not** replace the `ld -r` step with `libtool -static` - `libtool -static` leaves every symbol exported and reintroduces the collision. The build script's sanity-check fails the build if the collision is detectable.
 
 ### Memory tuning, in order of importance
 
@@ -230,14 +249,14 @@ The XCFramework ships with these `sd_ctx_params` overrides (see `Sources/CMirage
 | `enable_mmap` | `true` | Cuts peak load memory from 2× weights to ~1× (lazily paged-in). Required or jetsam fires during load. |
 | `offload_params_to_cpu` | `true` | Keeps diffusion weights in CPU-side mmap pages; copies per-op to GPU. Sets the routing to *not* use `buffer_from_host_ptr` directly. Faster paths exist on paper but tip into OOM at sampling step 7-9 on a 12 GB device. |
 | `keep_clip_on_cpu` | `true` | The text encoder (Qwen3-4B / T5-XXL) is 2-3 GB on GPU; on CPU it's an N-second one-shot at the start of each generation, hidden under the longer sampling phase. |
-| `keep_vae_on_cpu` | `true` | VAE decode on CPU is slow (~30-60 s) but adds zero GPU residency. Flipping to GPU saves time but adds ~300 MB to peak — flag preserved as a future opt-in. |
-| `free_params_immediately` | `false` | sd.cpp's default is `true`, which releases the diffusion-model param tensors at the end of every `generate_image` call. The next generation against the same `sd_ctx` dereferences freed buffers and crashes. We keep params alive for the engine's lifetime — caller controls unload via `Engine` lifetime. |
+| `keep_vae_on_cpu` | `true` | VAE decode on CPU is slow (~30-60 s) but adds zero GPU residency. Flipping to GPU saves time but adds ~300 MB to peak - flag preserved as a future opt-in. |
+| `free_params_immediately` | `false` | sd.cpp's default is `true`, which releases the diffusion-model param tensors at the end of every `generate_image` call. The next generation against the same `sd_ctx` dereferences freed buffers and crashes. We keep params alive for the engine's lifetime - caller controls unload via `Engine` lifetime. |
 | `diffusion_flash_attn` | `true` | Reduces attention working memory. |
 | `diffusion_conv_direct` | `true` | Reduces conv working memory. |
 
 ### Embedded Metal library
 
-`GGML_METAL_EMBED_LIBRARY=ON` is forced in the build script so the `.metal` source is embedded as `.incbin` bytes inside `libmirage-sdcpp.a` and JIT-compiled on first use. The alternative (default) ships a precompiled `default.metallib` as a bundle resource and scans `Bundle.main` for it at runtime — which would either grab the wrong consumer's metallib (see symbol-collision above) or fail outright when the host app doesn't ship `default.metallib` at all.
+`GGML_METAL_EMBED_LIBRARY=ON` is forced in the build script so the `.metal` source is embedded as `.incbin` bytes inside `libmirage-sdcpp.a` and JIT-compiled on first use. The alternative (default) ships a precompiled `default.metallib` as a bundle resource and scans `Bundle.main` for it at runtime - which would either grab the wrong consumer's metallib (see symbol-collision above) or fail outright when the host app doesn't ship `default.metallib` at all.
 
 First engine load on iPhone adds ~8 s for the Metal source compile; subsequent loads in the same process are cached.
 
@@ -248,7 +267,7 @@ For UIs that need step-level feedback (essential on iPhone where a 9-step genera
 ```swift
 Mirage.setProgressCallback { step, total, elapsed in
     // step is 1-indexed, total = configured steps, elapsed = sec since last tick.
-    // Fires on the sampler thread — hop to MainActor before touching UI.
+    // Fires on the sampler thread - hop to MainActor before touching UI.
     Task { @MainActor in
         progress = Double(step) / Double(total)
     }
@@ -270,7 +289,7 @@ Diffusion weights + text encoder + activations have to live in GPU memory at the
 | iPhone 15 Pro | 8 GB | Same as 16 Pro, slightly tighter |
 | iPhone 14 and older | 6 GB | SD1.5 / SDXL-Turbo at Q4 only. Larger models will OOM. |
 
-Engine ships with `keep_clip_on_cpu = true` by default — keeps the text encoder off the GPU which saves ~2-3 GB on iPhone.
+Engine ships with `keep_clip_on_cpu = true` by default - keeps the text encoder off the GPU which saves ~2-3 GB on iPhone.
 
 You should gate model availability by device:
 
@@ -296,7 +315,7 @@ Numbers from a 1024×1024 generation at the recommended step count for each fami
 
 These are **engine-side wall-clock** times, not including the first-time model load (multi-GB read + GPU upload, ~10-30 s once per app launch).
 
-For "feels fast" generation on iPhone, ship the Turbo variants — they're distilled to 4-9 steps vs the 28-50 steps a non-turbo model needs.
+For "feels fast" generation on iPhone, ship the Turbo variants - they're distilled to 4-9 steps vs the 28-50 steps a non-turbo model needs.
 
 ---
 
@@ -330,7 +349,7 @@ your prompt + model paths               │   Mirage (Swift) │
 
 ## Getting the XCFramework
 
-Two ways — fetch the prebuilt one (fast path, what app devs want):
+Two ways - fetch the prebuilt one (fast path, what app devs want):
 
 ```bash
 ./Scripts/fetch-xcframework.sh        # downloads the latest sdcpp-* release (~30 s)
@@ -372,13 +391,13 @@ The heavy tests load real multi-GB weights and generate small images. They're ga
 - **No upscaler integration yet.** sd.cpp supports ESRGAN/4x; we haven't surfaced it in the Swift API. Drop a feature request if you need it.
 - **No LoRA / textual inversion API yet.** sd.cpp supports them; we just haven't surfaced them. Easy to add when needed.
 - **ControlNet not exposed.** Same story.
-- **iOS Simulator works** for smoke tests, but the Simulator's Metal stack is much slower than a real device — don't benchmark there.
+- **iOS Simulator works** for smoke tests, but the Simulator's Metal stack is much slower than a real device - don't benchmark there.
 
 ---
 
 ## Built by
 
-[Haplo](https://haplo.app) — on-device AI for iOS. The same engine powers Haplo's in-app image generation.
+[Haplo](https://haplo.app) - on-device AI for iOS. The same engine powers Haplo's in-app image generation.
 
 If Mirage shows up in your app, [tell us about it](https://twitter.com/jc_builds).
 
@@ -386,6 +405,22 @@ If Mirage shows up in your app, [tell us about it](https://twitter.com/jc_builds
 
 ## Credits
 
-- [`stable-diffusion.cpp`](https://github.com/leejet/stable-diffusion.cpp) — the engine doing all the actual work
-- [`ggml`](https://github.com/ggml-org/ggml) — the tensor library underneath
-- Apple's Metal team — for `ggml-metal` working at all on a phone
+- [`stable-diffusion.cpp`](https://github.com/leejet/stable-diffusion.cpp) - the engine doing all the actual work
+- [`ggml`](https://github.com/ggml-org/ggml) - the tensor library underneath
+- Apple's Metal team - for `ggml-metal` working at all on a phone
+---
+
+## More from Haplo
+
+More open source from [Haplo](https://github.com/haplollc), built by the same solo developer:
+
+- [ThinkingOrbs](https://github.com/haplollc/ThinkingOrbs): dotted, honestly-3D loading indicators for AI and agent interfaces in SwiftUI. Nine hand-tuned designs, two tuned sizes.
+- [Minted](https://github.com/haplollc/Minted): turn any SVG into a physically-lit 3D gold medallion for SwiftUI.
+- [Vesalius](https://github.com/haplollc/Vesalius): a map of your codebase for Claude Code, an on-device code graph with an MCP server, a CLI, a Mac app and a VS Code extension.
+- [MuscleMapKit](https://github.com/haplollc/MuscleMapKit): interactive 3D muscle map for iOS. Shade muscles by how hard they were worked, spin the body, tap a group.
+- [ProcessingField](https://github.com/haplollc/ProcessingField): a SwiftUI progress field, a grid of marks whose sizes describe one soft shape that drifts, folds and breathes while your app is busy.
+- [Gepetto](https://github.com/haplollc/Gepetto): a browser agent for iOS and macOS that a person can take over at any time. Real WKWebView, small on-device models, a native SwiftUI panel.
+- [ClayGlobe](https://github.com/haplollc/ClayGlobe): a claymorphic 3D globe for SwiftUI that plants a waving flag on every country you visit.
+- [SiriGlass](https://github.com/haplollc/SiriGlass): the Siri drop from iOS 27, for SwiftUI. Liquid Glass that pours out of the Dynamic Island and lights up with your voice.
+- [Scrubbers](https://github.com/haplollc/Scrubbers): twelve sliders you will want to touch, for SwiftUI. One view, one enum.
+- [KoiPond](https://github.com/haplollc/KoiPond): a living koi pond for SwiftUI. Koi glide over any view, lily pads drift on top, and a Metal shader ripples and refracts it all.
