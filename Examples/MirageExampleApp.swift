@@ -13,8 +13,8 @@
 //           Qwen3-4B-Instruct-2507-Q4_K_M.gguf   (2.3 GB)
 //           ae.safetensors                       (320 MB)
 //
-//       Download bundles from huggingface.co/HaploApps once and copy into
-//       the documents dir on first launch.
+//       Download the bundle from huggingface.co/jc-builds/Z-Image-Turbo-iOS
+//       once and copy it into the documents dir on first launch.
 //
 //    2. Drop this file into a fresh Xcode SwiftUI app with `Mirage`
 //       added as a Swift package dependency.

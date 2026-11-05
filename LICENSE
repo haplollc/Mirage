@@ -29,6 +29,6 @@ This package embeds and links against:
 
 Their full license texts are reproduced in Sources/CKilnImage/vendor/sd-cpp/LICENSE.
 
-The model weights distributed under haploapps/* on Hugging Face are not part
+The model weights distributed under jc-builds/* on Hugging Face are not part
 of this repository; they remain under each model's upstream license (Apache 2.0
 for Z-Image, Tongyi Open License for Qwen-Image, etc.). See each model card.
