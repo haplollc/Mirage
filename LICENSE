@@ -27,7 +27,7 @@ This package embeds and links against:
   * stable-diffusion.cpp (https://github.com/leejet/stable-diffusion.cpp) — MIT License
   * ggml (https://github.com/ggml-org/ggml) — MIT License
 
-Their full license texts are reproduced in Sources/CKilnImage/vendor/sd-cpp/LICENSE.
+Their full license texts are reproduced in Sources/CMirage/vendor/sd-cpp/LICENSE.
 
 The model weights distributed under haploapps/* on Hugging Face are not part
 of this repository; they remain under each model's upstream license (Apache 2.0

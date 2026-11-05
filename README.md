@@ -181,7 +181,7 @@ struct ImageGenScreen: View {
 }
 ```
 
-A complete reference app lives in [`Examples/MirageExampleApp`](Examples/MirageExampleApp).
+A complete reference app lives in [`Examples/MirageExampleApp.swift`](Examples/MirageExampleApp.swift).
 
 ---
 
