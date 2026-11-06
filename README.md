@@ -134,7 +134,7 @@ struct ImageGenScreen: View {
     let engine: Engine
 
     init() throws {
-        // 1. Download a model bundle from huggingface.co/HaploApps once
+        // 1. Download a model bundle from huggingface.co/jc-builds/Z-Image-Turbo-iOS once
         //    (use Hugging Face's download helpers, or Haplo's model manager).
         let models = ModelFiles(
             diffusionModel: try modelURL("z-image-turbo-Q3_K_M.gguf"),
