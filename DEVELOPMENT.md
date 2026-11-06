@@ -86,7 +86,7 @@ Heavy tests produce a small (256×256, 4 steps) image to `$TMPDIR/kiln-tiny.png`
 cd Sources/CMirage/vendor/sd-cpp
 git fetch origin
 git checkout <new-commit-sha>
-cd ../../../../..
+cd ../../../..
 ./Scripts/build-xcframework.sh
 swift test --filter MirageHeavyIntegrationTests
 ```
